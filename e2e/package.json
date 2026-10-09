@@ -1,0 +1,9 @@
+{
+  "name": "agent-gate-e2e",
+  "private": true,
+  "description": "Pinned harness versions for the live e2e matrix",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.294",
+    "@openai/codex": "0.161.0"
+  }
+}
