@@ -1,38 +1,118 @@
 #!/usr/bin/env python
-"""Hermes adapter: `gated-local` terminal backend.
+"""Native Hermes pre-tool adapter, plus the legacy gated-local wrapper.
 
-Wraps the built-in local backend; every command dispatch (terminal,
-execute_code, file tools -- anything routed through the environment) passes
-through gate.gate() first. Verdict mapping:
-  run   -> execute
-  log   -> execute + append one line to gate_log.jsonl
-  review/block -> return a blocked result asking the harness to confirm
-                  (Hermes approval prompts fail closed on timeout)
+The native plugin invokes this script in a subprocess. Its JSON result is
+null for run/log, an approve directive for review, or a block directive.
+Non-local backends and opaque code/interactive input require human review.
 
-Install: ~/.hermes/plugins/gatedlocal/{__init__.py,plugin.yaml}
-then: hermes plugins enable gatedlocal
-      hermes config set terminal.backend gatedlocal
-
-WIRING NOTE (verify against installed Hermes before first run): the local
-environment class path must match the core repo layout
-(tools/environments/). The wrapper is backend-agnostic on purpose: it
-duck-types any env object and only overrides execute() and write_file().
-
-v2.1 changes:
-  - mode is pinned to "strict": this backend wraps the LOCAL backend, so
-    there is no container boundary, whatever HERMES_TERMINAL_BACKEND says
-  - a per-environment `state` dict tracks downloaded files across commands
-    (`curl -o x URL` now, `sh x` three commands later -> review)
-  - write_file() runs gate.check_write() for file-tool writes
-  - the gate's own directory is protected from agent writes (GATE_DIR)
+The legacy GatedEnvironment wrapper only intercepts execute/write_file.
+It keeps strict mode and download state, logs to ~/.hermes/gate_log.jsonl,
+and denies review/block without a native approval interface.
+Use the repository's native plugin manifest for new installations.
 """
 import json
 import os
+import stat
+import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common as C
 from gate import check_write, gate as core_gate  # noqa: E402  (path set by plugin loader)
 
 LOG = os.path.expanduser("~/.hermes/gate_log.jsonl")
+
+
+def _review(reason):
+    return {"decision": "review", "why": ["degraded"], "detail": {"degraded": reason}}
+
+
+def _file_verdict(G, tool, ti, cwd, root):
+    if tool == "patch" and ti.get("mode", "replace") == "patch":
+        patch = ti.get("patch")
+        return G.check_patch(patch, cwd, root=root) if isinstance(patch, str) and patch else _review("Missing patch text.")
+    path = ti.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return _review("Missing file path.")
+    full = os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))
+    if G.in_protected(full):
+        return {"decision": "block", "why": ["gate_tamper"],
+                "detail": {"gate_tamper": "The gate code, runtime, and state are off limits."}}
+    if tool == "write_file":
+        content = ti.get("content")
+        if not isinstance(content, str):
+            return _review("Missing file contents.")
+    else:
+        if ti.get("mode", "replace") != "replace":
+            return _review("Unknown patch mode.")
+        old, new = ti.get("old_string"), ti.get("new_string")
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            return _review("Cannot reconstruct the replacement patch.")
+        info = os.stat(full)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2_000_000:
+            return _review("The original file is not a small regular file.")
+        with open(full, encoding="utf-8") as fh:
+            before = fh.read(2_000_001)
+        if len(before) > 2_000_000 or old not in before:
+            return _review("Cannot reconstruct the replacement patch.")
+        content = before.replace(old, new) if ti.get("replace_all") is True else before.replace(old, new, 1)
+    return G.check_write(full, cwd, content=content, root=root)
+
+
+def handle(p):
+    G = C.load_gate()
+    tool = p.get("tool_name")
+    ti = p.get("tool_input")
+    if not isinstance(ti, dict):
+        raise ValueError("Tool input must be a JSON object.")
+    cwd, root = p.get("cwd"), p.get("root")
+    if not isinstance(cwd, str) or not os.path.isabs(cwd):
+        raise ValueError("The Hermes tool directory must be absolute.")
+    if not isinstance(root, str) or not os.path.isabs(root):
+        raise ValueError("The Hermes project root must be absolute.")
+    sid = p.get("session_id")
+    if not isinstance(sid, str) or not sid:
+        raise ValueError("Missing Hermes session identity.")
+    payload = json.dumps(ti, sort_keys=True)
+    if p.get("backend") != "local":
+        v = _review("The remote backend has no verified path or file-content context.")
+    elif p.get("cwd_known") is not True:
+        v = _review("The tool directory is unknown.")
+    elif tool == "terminal":
+        cmd = ti.get("command")
+        if not isinstance(cmd, str) or not cmd.strip():
+            v = _review("Missing terminal command.")
+        elif C.SELF_APPROVAL_RE.search(cmd):
+            v = {"decision": "block", "why": ["gate_tamper"],
+                 "detail": {"gate_tamper": "Agents cannot change gate approvals or runtime files."}}
+        else:
+            workdir = ti.get("workdir")
+            if workdir is not None and (not isinstance(workdir, str) or not os.path.isabs(workdir)):
+                v = _review("The terminal workdir is not absolute.")
+            else:
+                cwd = os.path.normpath(workdir or cwd)
+                with C.session_state("hermes-" + str(sid)) as st:
+                    v = G.gate(cmd, cwd, "agent", agent="hermes", mode="strict", state=st,
+                               root=root, cwd_known=True)
+                if ti.get("background") or G.stdin_command_channel(cmd, cwd):
+                    v = C.worst(v, _review("Background or interactive input requires human review."))
+    elif tool in ("write_file", "patch"):
+        v = _file_verdict(G, tool, ti, cwd, root)
+    elif tool in ("execute_code", "process_manage"):
+        v = _review("Opaque code or interactive input requires human review.")
+    else:
+        raise ValueError(f"Unsupported Hermes tool: {tool}")
+    reason = f"agent-gate {v['decision']}: {C.explain(v)}"
+    if v["decision"] != "run":
+        C.log({"harness": "hermes", "session": sid, "tool": tool, "cwd": cwd,
+               "decision": v["decision"], "why": v.get("why"), "payload": payload[:4000]})
+    directive = None
+    if v["decision"] == "block":
+        directive = {"action": "block", "message": reason}
+    elif v["decision"] == "review":
+        directive = {"action": "approve", "message": reason,
+                     "rule_key": "agent-gate:" + C.binding_sha("hermes", sid, cwd, tool, payload)}
+    print(json.dumps(directive))
 
 
 class GatedEnvironment:
@@ -58,7 +138,7 @@ class GatedEnvironment:
 
     def write_file(self, path, content, *a, origin="agent", **kw):
         """Only used if the inner env exposes write_file; otherwise no-op wrap."""
-        v = check_write(path, cwd=self._cwd, origin=origin)
+        v = check_write(path, cwd=self._cwd, origin=origin, content=content)
         _log(v)
         if v["decision"] in ("review", "block"):
             return _blocked(v["decision"], v["why"], v.get("detail", {}))
@@ -80,3 +160,7 @@ def _log(v):
             f.write(json.dumps({"t": time.time(), **v}) + "\n")
     except OSError:
         pass
+
+
+if __name__ == "__main__":
+    C.run_hook(handle)

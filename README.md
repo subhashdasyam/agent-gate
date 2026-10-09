@@ -9,7 +9,7 @@ Its deterministic policy works without a model.
 The gate can stop dangerous actions from a poisoned model, such as secret transfers or writes external to the project.
 
 The original use case was the ProjectDiscovery threat: a keyword-triggered model backdoor that sends `.env` data through a download-and-execute command.
-The project includes hooks for Claude Code and Codex, an experimental Hermes wrapper, and tests against real CLIs.
+The project includes native plugins for Claude Code, Codex, and Hermes, plus tests against real CLIs.
 
 **CAUTION: Use an OS sandbox or a separate user account.**
 A command gate is not an isolation boundary.
@@ -30,7 +30,8 @@ The adapters apply the decision before the host executes the tool.
 | 🟧 `review` | Get human approval before the action continues. |
 | 🟥 `block` | Reject the action. A one-time approval cannot override this decision. |
 
-The Claude and Codex hooks record `log`, `review`, `block`, and approval decisions.
+The adapters record `log`, `review`, and `block` decisions.
+The Claude and Codex adapters also record one-time approval decisions.
 They do not record ordinary `run` decisions.
 The hooks do not send an explicit `allow` that overrides host permission rules.
 
@@ -99,49 +100,143 @@ This repository has no Laya client, model call, or service configuration.
 These hooks do not get decisions from Laya.
 The merge API is the connection point for a future integration.
 
-## 🔌 Install the hooks
+## 🔌 Install: pick your dance floor
 
-The requirements install tree-sitter and the Bash grammar.
-The gate uses the fallback lexer if those packages are not available.
+Use Python 3.11 or later, with `venv` and `pip` support.
+Use a host version that supports native plugin hooks.
+The local checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21.2`.
+Git is necessary for installation from a Git repository.
 
-From the repository root, install the parser packages:
+**Local development:** use the current checkout with the commands below.
+The GitHub installation commands require publication of these plugin files first.
+Do not install both a native plugin and manual hooks for the same host.
 
-```bash
-python3 -m pip install -r requirements.txt
+### 🎧 Claude Code
+
+In Claude Code, add this checkout and install the plugin:
+
+```text
+/plugin marketplace add /absolute/path/to/agent-gate
+/plugin install agent-gate@agent-gate
 ```
 
-For Claude Code, install the hook configuration:
+After publication, replace the first command with:
 
-```bash
-python3 adapters/install.py claude --write
+```text
+/plugin marketplace add subhashdasyam/agent-gate
 ```
 
-For Codex, install the hook configuration:
+The plugin includes `PreToolUse`, `CwdChanged`, and `UserPromptSubmit` hooks.
+The user-origin option stays off unless `GATE_USER_ORIGIN=1` is set.
+See the [Claude plugin reference](https://code.claude.com/docs/en/plugins-reference).
+The shared catalog includes Codex policy metadata.
+Claude ignores that field and reports an unknown-field notice.
+
+### 🪩 Codex
+
+In your terminal, add this checkout and install the plugin:
 
 ```bash
-python3 adapters/install.py codex --write
+codex plugin marketplace add /absolute/path/to/agent-gate
+codex plugin add agent-gate@agent-gate
 ```
 
-Codex uses the definition hash for hook trust.
-
-Start Codex:
+After publication, replace the first command with:
 
 ```bash
-codex
+codex plugin marketplace add https://github.com/subhashdasyam/agent-gate.git
 ```
 
-In Codex, give approval to the hook through `/hooks`.
+Start Codex. Use `/hooks` to examine and trust the hook definition.
+A plugin installation alone does not establish hook trust.
+An update can change the definition hash and require new trust.
+See the [Codex hook guide](https://learn.chatgpt.com/docs/hooks).
 
-Examine the parser, state directory, protected paths, and detected modes:
+This repository supplies its own marketplace.
+Hook plugins are not eligible for the public Codex plugin directory under the current [publication rules](https://developers.openai.com/plugins/build/plugins).
+
+### 🕺 Hermes
+
+For this checkout, validate the native manifest and registration:
 
 ```bash
-python3 adapters/common.py --doctor
+hermes plugins validate /absolute/path/to/agent-gate
+hermes plugins doctor /absolute/path/to/agent-gate
+```
+
+For local use, place the checkout in `$HERMES_HOME/plugins/agent-gate` (default: `~/.hermes/plugins/agent-gate`).
+Then use `hermes plugins enable agent-gate`.
+The install command accepts Git sources, not an arbitrary checkout path.
+After publication, installation is:
+
+```bash
+hermes plugins install subhashdasyam/agent-gate --enable
+```
+
+The plugin requires Hermes `0.21.2` or later.
+It registers `pre_tool_call`.
+It does not replace or patch Hermes tools.
+See the [Hermes plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins).
+
+### 🧩 One explicit parser setup
+
+Run the setup command from the installed gate's error message in your own terminal.
+For a checkout, the equivalent command is:
+
+```bash
+python3 adapters/bootstrap.py --setup
+python3 adapters/bootstrap.py --doctor
+```
+
+Use the Python executable shown in the error message.
+Hermes can use a different Python version from your shell.
+Runtime directories depend on the Python major/minor version and the pinned requirements.
+Hosts with the same runtime key reuse that environment.
+No parser packages enter the host's Python environment.
+
+Only `--setup` downloads packages.
+It creates a virtual environment and installs both pinned parser packages.
+It verifies the Bash grammar before it marks the runtime ready.
+A tool hook never installs packages.
+A missing runtime or parser causes denial after the launcher starts.
+Hermes dependency declarations alone do not install the packages.
+
+Restart the host after setup. Confirm that the plugin and hooks are active.
+`--doctor` examines the runtime, state directory, protected paths, and detected modes.
+It does not prove host hook trust or tool coverage.
+
+To disable or remove the plugin, use the host's plugin manager.
+Removal does not delete the shared runtime, logs, or approval state.
+
+### 🛠️ Manual hooks and migration
+
+Manual hooks remain available for Claude Code and Codex:
+
+```bash
+python3 adapters/install.py claude --setup --write
+python3 adapters/install.py codex --setup --write
 ```
 
 The Claude installer writes to `~/.claude/settings.json`.
 The Codex installer writes to `CODEX_HOME/hooks.json`, or `~/.codex/hooks.json` if `CODEX_HOME` is unset.
 Without `--write`, the installer only prints the configuration.
-With `--write`, it keeps other hook entries, makes a timestamped `.bak` copy, and does not add duplicate command entries.
+With `--write`, it preserves other hooks and settings, makes a timestamped `.bak` copy, and replaces recognized old gate hooks.
+It preserves file permissions. New configuration files use mode `0600` on POSIX.
+
+An identical configuration causes no write or new backup.
+Invalid configuration causes an error without a write.
+
+Before native plugin installation, remove old manual hooks:
+
+```bash
+python3 adapters/install.py claude --remove
+python3 adapters/install.py codex --remove
+```
+
+`--remove` removes only recognized agent-gate commands.
+It preserves other hooks and makes a backup when it changes a file.
+Repeat removal with `--project DIR` if you installed project-local hooks.
+Examine other configuration layers for duplicate gate hooks.
 
 For project-local configuration, use `--project DIR`:
 
@@ -150,8 +245,9 @@ python3 adapters/install.py claude --write --project /path/to/project
 python3 adapters/install.py codex --write --project /path/to/project
 ```
 
-The hooks refer to the Python executable and adapter files by absolute path.
-If you move this repository, update the installed hooks.
+Manual hooks refer to the Python executable and launcher by absolute path.
+If you move this repository, update those hooks.
+Native plugin hooks use the host's plugin-root variable, with quoted paths.
 
 **CAUTION: Set `PAGER=cat` and `GIT_PAGER=cat` for Codex agent shells.**
 Use `shell_environment_policy.set` in the Codex configuration.
@@ -182,24 +278,26 @@ Missing or invalid sandbox configuration causes strict mode.
 The supported CLI contracts can fail open after a hook crash, host timeout, or invalid output.
 `common.run_hook` converts caught exceptions and its own deadline overruns to exit code 2.
 The default deadline is 8 seconds on systems that support `SIGALRM`.
-This wrapper cannot prevent failures before it starts or failures in the host itself.
+The launcher also converts caught runtime failures and its 20-second adapter timeout to exit code 2.
+The Hermes entry point returns a block directive for caught subprocess failures and its 25-second timeout.
+These checks cannot prevent failures before Python starts, disabled hooks, or failures in the host itself.
 
 The earlier validation found that Codex treated `ask` as a hook failure and failed open.
 Thus, the Codex adapter uses exit code 2 for review.
 
-### Human approvals
+### Claude Code and Codex human approvals
 
 Run the approval tool in your terminal, not in the agent session.
 Without an ID, the tool lists calls for approval:
 
 ```bash
-python3 adapters/gate_approve.py
+python3 adapters/bootstrap.py approve
 ```
 
 To approve a call, replace `APPROVAL_ID` with its ID:
 
 ```bash
-python3 adapters/gate_approve.py APPROVAL_ID
+python3 adapters/bootstrap.py approve APPROVAL_ID
 ```
 
 Read the displayed call. Enter `yes` only if you approve that action.
@@ -208,7 +306,7 @@ Then ask the agent to retry.
 To remove a call without approval, use `--deny`:
 
 ```bash
-python3 adapters/gate_approve.py --deny APPROVAL_ID
+python3 adapters/bootstrap.py approve --deny APPROVAL_ID
 ```
 
 - Each approval permits one retry and expires after 15 minutes.
@@ -228,6 +326,7 @@ An agent with the same account can forge approval state through code that the ga
 | Variable | Function |
 |---|---|
 | `GATE_STATE_DIR` | Override the state directory. The default is `$XDG_STATE_HOME/agent-gate` or `~/.local/state/agent-gate`. |
+| `GATE_RUNTIME_DIR` | Override the shared parser runtime base. The default is `$XDG_DATA_HOME/agent-gate/runtime` or `~/.local/share/agent-gate/runtime`. |
 | `GATE_DEADLINE_S` | Set the hook deadline. The default is `8`. A nonpositive value disables the internal deadline. |
 | `GATE_PROTECT` | Add protected paths. Separate paths with the OS path separator. |
 | `GATE_SELF_PROTECT` | Set to `0` only during gate development. It disables protection of the gate code directory, not the adapter state directory. |
@@ -243,23 +342,39 @@ Normal mode permits known network egress with a `log` decision.
 Strict mode sends that egress to `review`.
 
 The default origin is `agent`.
-For optional Claude user-origin checks, install the `UserPromptSubmit` hook through `--user-origin`.
+
+For optional Claude user-origin checks with manual hooks, add `--user-origin` during installation.
+The native Claude plugin already includes `UserPromptSubmit`.
 Also set `GATE_USER_ORIGIN=1` in the hook environment.
 The adapter uses exact command matches against supported prompt forms. It excludes recognized subagent and pasted-content prompts.
 User-origin decisions are less restrictive, as the policy table shows.
 
-### Experimental Hermes wrapper
+### Hermes: native hook behavior
 
-`adapters/hermes_gated.py` contains `GatedEnvironment`, a wrapper around a local environment.
-The wrapper uses strict mode and keeps download state across calls.
-It intercepts `execute()` and `write_file()`, delegates other attributes, and delegates `cleanup()`.
-It records decisions in `~/.hermes/gate_log.jsonl` when the log is writable.
+The native plugin uses strict mode and agent origin.
+It gets directory and backend context from Hermes, not from model-supplied context fields.
+The policy runs in a separate process because Hermes invokes policy hooks in worker threads.
 
-The wrapper returns a blocked result for `review` and `block`.
-It does not provide a complete approval interface or an installer for a Hermes plugin.
-Its `write_file()` call examines the path but does not pass the new content to `check_write()`.
-Thus, that wrapper does not apply embedded shell checks to file writes.
-Validation of the local Hermes environment API and plugin connection is necessary before use.
+| Tool or condition | Behavior |
+|---|---|
+| Local `terminal` | Examine the command with a fixed project root. Keep per-session download state. |
+| Local `write_file` | Examine the path and new contents, including supported embedded shell code. |
+| Local `patch` | Examine patch text, or reconstruct exact replacement contents before file checks. Uncertain reconstruction does not continue automatically. |
+| `execute_code`, background commands, or interactive command channels | Require native human approval. The gate does not claim complete analysis of opaque code. |
+| `process_manage` | Require approval for process input and unknown actions. Permit status, output, termination, and handoff actions without gate analysis. |
+| Non-local backend or unknown directory | Require approval. The gate does not treat host paths as verified remote paths. |
+| `block` or caught runtime error | Return a native block directive. |
+| `review` | Return a native approval directive, not a tool execution. |
+
+Hermes handles the approval prompt.
+The rule key binds the session, directory, tool, and all arguments.
+Hermes can remember an approval under its own approval policy.
+This path is not the Claude/Codex one-time approval file protocol.
+Other tools, MCP actions, and code inside an approved opaque call remain outside this hook's analysis.
+
+The legacy `GatedEnvironment` wrapper remains available for Python callers.
+It checks commands and file contents, but returns a blocked result for both `review` and `block`.
+It has no complete approval interface. Use the native plugin for new installations.
 
 ## 🧭 The policy floor
 
@@ -349,7 +464,26 @@ The adapters use configuration-based mode detection. The core environment-based 
 Test results describe particular inputs and environments.
 They do not prove that every dangerous action will get review.
 
-### Current local check: 2026-10-09
+### Current local check: 2026-10-10
+
+These checks used the pinned tree-sitter packages in a temporary runtime.
+No live host profile changed.
+
+| Check | Result |
+|---|---|
+| `test_gate.py` | 54/54 core checks passed. |
+| `probe_corpus.py` | 318/318 attack probes caught. Clean-command reviews: 0/87 in normal mode, 2/87 in strict mode. |
+| `adapters/test_adapters.py` | 128 adapter checks passed. |
+| `adapters/test_plugins.py` | 20 tests passed with Python 3.11 and 3.12. Coverage includes setup, migration, permissions, Hermes decisions, approval keys, and failure paths. |
+| Claude Code `2.1.290` | Manifest validation and temporary-profile marketplace installation passed. Cached hooks passed benign-command and state-denial probes. |
+| Codex `0.162.0` | Temporary-profile marketplace discovery and installation passed. Cached hooks passed benign-command and state-denial probes. |
+| Hermes `0.21.2` | Native validation and actual worker-thread dispatch passed. Approval allow, deny, service error, and missing-runtime cases passed with a simulated approval response. |
+
+Temporary-profile installation is not a live agent approval test.
+This check did not repeat the real-CLI attack matrix, interactive human approvals, or latency measurements.
+macOS and Windows were not tested.
+
+### Previous local check: 2026-10-09
 
 The local environment used the fallback parser because the tree-sitter packages were not available.
 
@@ -378,7 +512,7 @@ The previous README reported these results. This rewrite preserves them as histo
 
 The earlier report also stated that primary Claude documentation, SDK types, and Codex source informed the hook contracts.
 CLI versions and hook contracts can change.
-The current local check did not repeat that external-source validation.
+The 2026-10-10 plugin work also checked current official documentation and installed host contracts.
 
 ### Real-CLI matrix coverage
 
@@ -416,10 +550,12 @@ Run the offline checks from the repository root:
 python3 test_gate.py
 python3 probe_corpus.py
 python3 adapters/test_adapters.py
+python3 adapters/test_plugins.py
 ```
 
-The adapter tests use local fixtures and terminal simulations.
-They create files in the user cache directory.
+Install `requirements.txt` in a development virtual environment to test with the full parser.
+The adapter and plugin tests use local fixtures and terminal simulations.
+They create temporary `.gate-tests-*` directories inside the repository and remove them after the run.
 
 **CAUTION: Run real-CLI tests only in a disposable environment.**
 
@@ -459,7 +595,10 @@ It does not call a real model.
 - The earlier Claude `ask` test used headless mode. This project did not drive the interactive approval prompt.
 - Claude `WebFetch`, MCP transfers, and an MCP server's own actions are outside this gate's view.
 - The fallback shell lexer and YAML parser provide less coverage than their full parsers.
-- The Hermes wrapper is incomplete. It does not apply embedded checks to file writes.
+- Hermes tools outside the covered names bypass this plugin. Remote backends and opaque code require review, not complete analysis.
+- The legacy Hermes wrapper has no native approval interface. Its file writes now include embedded checks.
+- Another plugin can modify tool arguments after policy checks. Plugin order and host behavior are not an isolation boundary.
+- A native plugin does not automatically create an OS sandbox or establish Codex hook trust.
 - OS-specific deadlines and locks are not equivalent on every platform. Windows does not use the POSIX state lock.
 
 **CAUTION: Keep `GATE_SELF_PROTECT` enabled in the installed gate.**
@@ -471,7 +610,7 @@ Continue regression tests and independent review.
 
 ## 🚀 Future TODO: Laya and more
 
-These items are future work, not available features.
+Unchecked items are future work. Checked items are now available.
 The list does not promise dates, model names, or new services.
 
 ### 🌈 Future-state diagram
@@ -479,7 +618,11 @@ The list does not promise dates, model names, or new services.
 The diagram shows the proposed design, not a released system.
 Solid borders show available components. Dashed borders show planned changes.
 Dashed arrows show the optional Laya path.
-`Hermes*` marks completion of the experimental wrapper.
+
+`Hermes*` marks the original Hermes integration proposal.
+The native plugin now exists.
+Full live approval and remote-backend validation remain future work.
+The image retains the original proposed layout.
 
 ![Future-state diagram: optional Laya, policy floor, human approval, and OS isolation.](agent-gate-future-state.drawio.png)
 
@@ -502,8 +645,12 @@ One-time approvals require an exact retry through the gate.
 
 ### 🔧 Integration and coverage
 
-- [ ] Complete the Hermes plugin connection against the installed environment API. Do tests of directory updates and human approvals.
-- [ ] Pass file contents through the Hermes wrapper so that `check_write()` can examine embedded shell code.
+- [x] Add native Claude Code, Codex, and Hermes plugin manifests, portable hook paths, and explicit shared parser setup.
+- [x] Connect the Hermes `pre_tool_call` hook to local command, file, and patch checks with native review directives.
+- [x] Pass file contents through the legacy Hermes wrapper for embedded shell checks.
+- [ ] Validate live Hermes human approvals, directory changes, remembered approvals, and remote backends.
+- [ ] Publish the plugin files to GitHub. Test installation from the published repository.
+- [ ] Submit Hermes catalog metadata after publication and review. Keep Codex distribution in the self-hosted marketplace while public-directory rules exclude hooks.
 - [ ] Repeat the real-CLI matrix against the pinned versions. Validate interactive Claude approvals and applicable hook contracts.
 - [ ] Increase fallback-parser coverage. Keep review mandatory for unknown syntax.
 - [ ] Expand known network and embedded-file coverage through focused regression cases.
@@ -524,10 +671,15 @@ One-time approvals require an exact retry through the gate.
 | [`adapters/codex_hook.py`](adapters/codex_hook.py) | Codex shell calls, patches, transcript recovery, and interactive-channel checks. |
 | [`adapters/common.py`](adapters/common.py) | Hook errors, deadlines, modes, logs, state, approvals, and `--doctor`. |
 | [`adapters/gate_approve.py`](adapters/gate_approve.py) | Human approval, pending-call list, and denial. |
-| [`adapters/install.py`](adapters/install.py) | Print or merge Claude and Codex hook configuration. |
-| [`adapters/hermes_gated.py`](adapters/hermes_gated.py) | Experimental local-environment wrapper. |
+| [`adapters/install.py`](adapters/install.py) | Print, merge, or remove manual hooks. Preserve other configuration and backups. |
+| [`adapters/bootstrap.py`](adapters/bootstrap.py) | Explicit parser setup, runtime verification, and bounded adapter launch. |
+| [`adapters/hermes_gated.py`](adapters/hermes_gated.py) | Native Hermes policy adapter and legacy local-environment wrapper. |
+| [`__init__.py`](__init__.py), [`plugin.yaml`](plugin.yaml) | Hermes native entry point and manifest. |
+| [`.claude-plugin/`](.claude-plugin/), [`.codex-plugin/`](.codex-plugin/) | Host manifests and the shared marketplace catalog. |
+| [`hooks/`](hooks/) | Portable Claude Code and Codex hook definitions. |
 | [`test_gate.py`](test_gate.py), [`probe_corpus.py`](probe_corpus.py) | Core checks, attack probes, and clean-command review measurements. |
 | [`adapters/test_adapters.py`](adapters/test_adapters.py) | Adapter regression suite. |
+| [`adapters/test_plugins.py`](adapters/test_plugins.py) | Plugin, setup, migration, and Hermes failure-path regressions. |
 | [`e2e/`](e2e/) | Real-CLI runners, scripted model, collector, scenarios, catalog, and pinned CLI dependencies. |
 | [`requirements.txt`](requirements.txt) | Pinned tree-sitter dependencies. |
 | [`agent-gate-architecture.drawio`](agent-gate-architecture.drawio) | Editable architecture diagram. Open the file in diagrams.net. |

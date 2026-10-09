@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|Monitor|PowerShell|Write|Edit|MultiEdit|NotebookEdit)$",
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}]}
+    ]
+  }
+}

@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import sys
@@ -323,9 +324,18 @@ def worst(*verdicts):
 
 def load_gate():
     import gate
-    if STATE_DIR not in gate.EXTRA_PROTECT:
-        gate.EXTRA_PROTECT.append(STATE_DIR)
+    if os.environ.get("GATE_REQUIRE_PARSER") == "1":
+        import shparse
+        if not shparse.HAVE_TS:
+            raise RuntimeError("The parser is not ready. Run adapters/bootstrap.py --setup in your own terminal.")
+    for path in (STATE_DIR, os.environ.get("GATE_RUNTIME_DIR")):
+        if path and path not in gate.EXTRA_PROTECT:
+            gate.EXTRA_PROTECT.append(path)
     return gate
+
+
+def approval_command():
+    return shlex.join([sys.executable, os.path.join(HERE, "gate_approve.py")])
 
 
 if __name__ == "__main__" and "--doctor" in sys.argv:
@@ -337,3 +347,4 @@ if __name__ == "__main__" and "--doctor" in sys.argv:
     print("claude mode    :", *claude_mode(os.getcwd(), {}, "true"))
     print("codex mode     :", *codex_mode(os.getcwd(), "default"))
     print("self-protected :", g._extra_protected())
+    print("hook status    : not verified here. Check the agent's hook trust and plugin state.")

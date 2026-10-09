@@ -16,9 +16,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 # not under /tmp: the gate treats /tmp as scratch space, which would hide
 # "outside the project" cases behind the tmp-scope rule
-_base = os.path.expanduser("~/.cache")
-os.makedirs(_base, exist_ok=True)
-TMP = tempfile.mkdtemp(prefix="gate-e2e-", dir=_base)
+_base = os.path.dirname(HERE)
+TMP = tempfile.mkdtemp(prefix=".gate-tests-", dir=_base)
 HOME = os.path.join(TMP, "home")
 PROJ = os.path.join(HOME, "proj")
 STATE = os.path.join(TMP, "state")
@@ -30,7 +29,8 @@ os.environ["GATE_STATE_DIR"] = STATE
 sys.path.insert(0, HERE)
 import common as C  # noqa: E402
 
-BASE_ENV = {**os.environ, "HOME": HOME, "GATE_STATE_DIR": STATE, "CLAUDE_PROJECT_DIR": PROJ}
+BASE_ENV = {**os.environ, "HOME": HOME, "GATE_STATE_DIR": STATE, "CLAUDE_PROJECT_DIR": PROJ,
+            "GATE_SELF_PROTECT": "0", "GATE_PROTECT": HERE}
 BASE_ENV.pop("GATE_MODE", None)
 BASE_ENV.pop("GATE_USER_ORIGIN", None)
 fails = []

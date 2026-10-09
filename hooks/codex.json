@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30, "statusMessage": "agent-gate"}
+        ]
+      }
+    ]
+  }
+}

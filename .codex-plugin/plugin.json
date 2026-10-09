@@ -1,0 +1,6 @@
+{
+  "name": "agent-gate",
+  "version": "0.1.0",
+  "description": "Check shell commands and patches before Codex executes them.",
+  "hooks": "./hooks/codex.json"
+}

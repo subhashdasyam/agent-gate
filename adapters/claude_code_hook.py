@@ -40,7 +40,7 @@ import common as C  # noqa: E402
 SHELL_TOOLS = {"Bash", "Monitor"}
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 NO_PROMPT_MODES = {"bypassPermissions", "dontAsk"}
-APPROVE_CMD = f"python3 {os.path.join(C.HERE, 'gate_approve.py')}"
+APPROVE_CMD = C.approval_command()
 
 
 def _origin(cmd, st, p):

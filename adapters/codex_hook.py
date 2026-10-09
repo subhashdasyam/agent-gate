@@ -31,7 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 
-APPROVE_CMD = f"python3 {os.path.join(C.HERE, 'gate_approve.py')}"
+APPROVE_CMD = C.approval_command()
 SHELL_CALLS = ("exec_command", "shell", "local_shell", "container.exec", "shell_command")
 TAIL_BYTES = 512 * 1024
 
