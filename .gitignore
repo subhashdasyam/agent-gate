@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.playwright-mcp/
+/.agents/
+/.codex/
+/.aws/
+/.claude/
+/.hermes/
+.env
+.env.*
+!.env.example
+!.env.sample
