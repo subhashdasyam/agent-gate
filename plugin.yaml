@@ -1,7 +1,7 @@
 manifest_version: 2
 api_version: 1
 name: agent-gate
-version: "0.2.2"
+version: "0.2.3"
 description: "Check terminal commands, file writes, and patches before execution. Request human approval for uncertain actions."
 author: "Subhash Dasyam"
 homepage: "https://github.com/subhashdasyam/agent-gate"

@@ -10,7 +10,7 @@ The earlier checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21
 The new Codex MCP checks used `0.162.1` on Linux.
 Git is necessary for installation from a Git repository.
 
-Earlier native plugin files are available in GitHub. Version `0.2.2` is local branch work until the operator publishes it.
+The native plugin version in this branch is `0.2.3`.
 The local manager tests used temporary profiles and a local checkout.
 Those tests did not use a fresh GitHub installation.
 Do not install both a native plugin and manual hooks for the same host.
@@ -348,7 +348,7 @@ It has no complete approval interface. Use the native plugin for new installatio
 | File | Contract |
 |---|---|
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | Claude plugin manifest and `hooks/claude.json` reference. |
-| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.2`. |
+| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.3`. |
 | [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) | Codex plugin manifest and `hooks/codex.json` reference. |
 | [`hooks/claude.json`](../hooks/claude.json) | `PreToolUse`, `CwdChanged`, and optional user-origin prompt capture. |
 | [`hooks/codex.json`](../hooks/codex.json) | `PreToolUse` for `Bash` and `apply_patch`. |

@@ -6,7 +6,7 @@
     {
       "name": "agent-gate",
       "source": "./",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "description": "A deterministic command and file-change gate for coding agents.",
       "category": "development",
       "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"}

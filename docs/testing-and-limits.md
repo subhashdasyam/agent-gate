@@ -3,6 +3,17 @@
 Test results describe particular inputs and environments.
 They do not prove that every dangerous action will get review.
 
+### Approval state check: 2026-10-11, version 0.2.3
+
+State errors identify the affected file and distinguish an empty file from invalid JSON.
+Both conditions stop the action without a grant.
+The gate does not reset these files automatically.
+
+The guard, context, and plugin suite passed 84 tests on Linux.
+The regression checks preserve corrupt files and prevent empty files after a failed first lookup.
+The real Codex checks passed Approve, Deny, Cancel, More information, and single-use grant cases in disposable profiles.
+These checks do not prove real human consent or native Windows and macOS behavior.
+
 ### Execution guard check: 2026-10-11
 
 Version `0.2.2` adds a guarded execution contract for Code Mode and native Windows.

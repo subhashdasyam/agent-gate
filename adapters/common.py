@@ -126,7 +126,9 @@ def _locked_json(path, default, strict=False):
             data = json.loads(text) if text is not None and (strict or text.strip()) else default
         except ValueError:
             if strict:
-                raise ValueError("State is corrupt. Stop and ask the operator to inspect it.")
+                condition = "empty" if text == "" else "invalid JSON"
+                raise ValueError(f"State is corrupt: {os.path.basename(path)} is {condition}. "
+                                 "Stop and ask the operator to inspect it.") from None
             data = default
         yield data
         tmp = None

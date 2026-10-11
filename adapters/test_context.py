@@ -252,9 +252,26 @@ class StateTests(StateFixture):
         self.pending()
         path = self.tmp / "state" / "reviews.json"
         path.write_text("broken JSON")
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, r"reviews\.json is invalid JSON"):
             self.pending()
         self.assertEqual(path.read_text(), "broken JSON")
+
+    def test_empty_legacy_reviews_fail_closed_with_file_name(self):
+        path = self.tmp / "state" / "reviews.json"
+        path.parent.mkdir()
+        path.touch()
+        with self.assertRaisesRegex(ValueError, r"reviews\.json is empty"):
+            self.pending()
+        self.assertEqual(path.read_bytes(), b"")
+
+    def test_failed_first_lookup_does_not_leave_empty_reviews(self):
+        path = self.tmp / "state" / "reviews.json"
+        with self.assertRaisesRegex(ValueError, "No review for this client session"):
+            R.details("0" * 32, "s1")
+        self.assertFalse(path.exists())
+        rid, status = self.pending()
+        self.assertEqual(status, "pending")
+        self.assertEqual(R.details(rid, "s1")["status"], "pending")
 
 
 class AdviceTests(StateFixture):
