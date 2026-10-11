@@ -18,6 +18,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
+import context as CT
+import laya_client as L
 from gate import check_write, gate as core_gate  # noqa: E402  (path set by plugin loader)
 
 LOG = os.path.expanduser("~/.hermes/gate_log.jsonl")
@@ -60,6 +62,10 @@ def _file_verdict(G, tool, ti, cwd, root):
 
 
 def handle(p):
+    CT.capture("hermes", p)
+    if p.get("hook_event_name") in ("UserPromptSubmit", "PostToolUse", "PostToolUseFailure"):
+        print("null")
+        return
     G = C.load_gate()
     tool = p.get("tool_name")
     ti = p.get("tool_input")
@@ -102,6 +108,7 @@ def handle(p):
         v = _review("Opaque code or interactive input requires human review.")
     else:
         raise ValueError(f"Unsupported Hermes tool: {tool}")
+    v = L.advise(v, "hermes", sid, tool, ti, cwd, root, "strict", p.get("cwd_known") is True)
     reason = f"agent-gate {v['decision']}: {C.explain(v)}"
     if v["decision"] != "run":
         C.log({"harness": "hermes", "session": sid, "tool": tool, "cwd": cwd,

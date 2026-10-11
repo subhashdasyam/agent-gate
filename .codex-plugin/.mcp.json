@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agent_gate": {
+      "type": "stdio",
+      "command": "python3",
+      "cwd": ".",
+      "env_vars": ["GATE_STATE_DIR", "GATE_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_STATE_HOME"],
+      "args": ["./adapters/bootstrap.py", "mcp"]
+    }
+  }
+}

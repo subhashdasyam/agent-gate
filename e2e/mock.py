@@ -128,21 +128,37 @@ class H(BaseHTTPRequestHandler):
         log({"codex_keys": sorted(body.keys()), "tool_choice": body.get("tool_choice"),
              "tools_raw": json.dumps(body.get("tools"))[:600]})
         names = [t.get("name") or (t.get("function") or {}).get("name") for t in tools]
+        functions = {t["name"] + "__" + f["name"]: (t["name"], f["name"])
+                     for t in tools if t.get("type") == "namespace"
+                     for f in t.get("tools", [])}
+        names.extend(functions)
         items = body.get("input") or []
-        got_result = any(isinstance(i, dict) and i.get("type") in (
-            "function_call_output", "custom_tool_call_output") for i in items)
+        results = [i for i in items if isinstance(i, dict) and i.get("type") in (
+            "function_call_output", "custom_tool_call_output")]
+        got_result = bool(results)
         sc = scenario()
+        sequence = sc.get("steps")
+        done = got_result
+        if sequence is not None:
+            done = len(results) >= len(sequence)
+            sc = sequence[len(results)] if not done else {}
         log({"codex_req": True, "tools": names, "got_result": got_result,
              "unnamed": [json.dumps(t)[:300] for t in tools if not (t.get("name") or (t.get("function") or {}).get("name"))]})
         if got_result:
             log({"codex_tool_result": [i for i in items if isinstance(i, dict) and
                                        i.get("type") in ("function_call_output", "custom_tool_call_output")][-1:]})
-        if got_result or not names:
+        if done or not names or ("function" in sc and sc["function"] not in names):
             item = {"type": "message", "role": "assistant", "id": "msg_1", "status": "completed",
                     "content": [{"type": "output_text", "text": "done", "annotations": []}]}
         elif "patch" in sc and "apply_patch" in names:
             item = {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_1", "name": "apply_patch",
                     "input": sc["patch"], "status": "completed"}
+        elif "function" in sc and sc["function"] in names:
+            item = {"type": "function_call", "id": "fc_1", "call_id": "call_1",
+                    "name": sc["function"], "arguments": json.dumps(sc.get("arguments", {})),
+                    "status": "completed"}
+            if sc["function"] in functions:
+                item["namespace"], item["name"] = functions[sc["function"]]
         else:
             cmd = sc["cmd"]
             if "exec_command" in names:
@@ -154,6 +170,9 @@ class H(BaseHTTPRequestHandler):
                 args, name = {"command": ["bash", "-lc", cmd]}, "shell"
             item = {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": name,
                     "arguments": json.dumps(args), "status": "completed"}
+        if sequence is not None and item["type"] in ("function_call", "custom_tool_call"):
+            item["call_id"] = f"call_{len(results) + 1}"
+            item["id"] = f"fc_{len(results) + 1}"
         usage = {"input_tokens": 10, "input_tokens_details": {"cached_tokens": 0},
                  "output_tokens": 5, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 15}
         sse(self, [

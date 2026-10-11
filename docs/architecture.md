@@ -16,11 +16,12 @@
 4. The core examines a shell command, a file write, or a patch.
 5. The core collects path and command features.
 6. The first applicable policy rule gives the policy floor.
-7. The core merges an optional model verdict when a direct caller supplies one.
+7. The adapter gets optional Laya advice. Direct core callers can also supply a model verdict.
 8. The adapter applies the result through the host contract.
 9. The host continues its own permission flow for `run` and `log`.
 
-The installed adapters do not call a model.
+The installed adapters call Laya only when the operator configures an endpoint and the selected route permits the call.
+Prompt and result hooks keep bounded evidence for later calls.
 The gate does not execute a command itself.
 The host executes the tool only after its permission flow.
 
@@ -102,10 +103,12 @@ The merge rules are fixed:
 - A model decision cannot lower `review` or `block`.
 - A missing model verdict or an unknown verdict keeps the policy floor unchanged.
 
-**Laya is future work.**
-This repository has no Laya client, model call, or service configuration.
-These hooks do not get decisions from Laya.
-The merge API is the connection point for a future integration.
+These rules describe the legacy direct Python API.
+The installed adapters use a stricter Laya rule: advice can only increase severity.
+Laya stays off by default. It cannot lower `log`, `review`, or `block`, or issue an approval grant.
+
+The client has a 2-second process deadline and validates the measured typed-decision response.
+Refer to [context, approvals, and the model contract](context-and-approvals.md).
 
 ## Parser contract
 
@@ -226,6 +229,8 @@ A tool hook never installs a missing dependency.
 |---|---|
 | `sessions/<safe-id>.json` | Downloaded paths and adapter context, such as the last directory or prompt. |
 | `approvals.json` | Pending and approved calls for the Claude/Codex one-time protocol. |
+| `sessions/context-<hash>.json` | Redacted prompt and result evidence, scoped by host and session, with a 256 KiB cap. |
+| `reviews.json` | Exact Codex MCP requests, client decisions, expiry, and single-use consumption. |
 | `log.jsonl` | Decision records and caught gate errors. |
 
 The default state directory is `~/.local/state/agent-gate`.
@@ -238,6 +243,9 @@ New session directories use mode `0700`.
 These creation modes do not repair permissions on paths that are present.
 POSIX systems use advisory locks for JSON state.
 Windows does not have the equivalent lock path.
+
+Exact Codex MCP grants therefore require POSIX locks in this version.
+Context filenames hash the host and full session ID instead of the legacy sanitized filename.
 
 The adapters record `log`, `review`, and `block`.
 Ordinary `run` calls do not create decision records.
@@ -254,6 +262,8 @@ Records can contain sensitive command text.
 | Native Hermes entry point | A 25-second subprocess timeout causes a native block directive. |
 | Runtime setup | Package installation has a separate 300-second subprocess timeout. |
 | Claude/Codex host hook | The manifest gives the hook a 30-second timeout. |
+| Optional Laya | A 2-second process deadline. Invalid replies keep the policy decision. |
+| Codex approval form | A 45-second total response deadline. No response means no grant. |
 | Host or Python startup | The gate cannot guarantee denial before its launcher starts. |
 
 The common hook wrapper accepts a JSON object on standard input.

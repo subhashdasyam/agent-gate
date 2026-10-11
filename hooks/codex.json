@@ -1,5 +1,11 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30}]}
+    ],
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30}]}
+    ],
     "PreToolUse": [
       {
         "matcher": "^(Bash|apply_patch)$",

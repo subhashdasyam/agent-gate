@@ -30,7 +30,8 @@ sys.path.insert(0, HERE)
 import common as C  # noqa: E402
 
 BASE_ENV = {**os.environ, "HOME": HOME, "GATE_STATE_DIR": STATE, "CLAUDE_PROJECT_DIR": PROJ,
-            "GATE_SELF_PROTECT": "0", "GATE_PROTECT": HERE}
+            "GATE_SELF_PROTECT": "0", "GATE_PROTECT": HERE,
+            "GATE_APPROVAL_TRANSPORT": "terminal", "GATE_LAYA_URL": ""}
 BASE_ENV.pop("GATE_MODE", None)
 BASE_ENV.pop("GATE_USER_ORIGIN", None)
 fails = []

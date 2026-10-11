@@ -3,7 +3,49 @@
 Test results describe particular inputs and environments.
 They do not prove that every dangerous action will get review.
 
-### Current local check: 2026-10-10
+### Current branch check: 2026-10-11
+
+The `feat/context-aware-approvals` branch adds context hooks, exact Codex grants, and optional Laya advice.
+Checks used Linux, Python 3.12, the pinned parser runtime, and MCP `2.0.0`.
+The original source snapshot and real host configuration were not changed.
+The explicit setup installed MCP only in the gate runtime.
+The model service was not contacted, started, or trained.
+
+| Check | Result |
+|---|---|
+| Core and adapter regressions | 54 core checks and 128 adapter checks passed. |
+| Parser corpus | 318/318 attack probes caught. Clean reviews: 0/87 normal, 2/87 strict. |
+| Plugin and context tests | 22 plugin tests and 32 context, grant, and model tests passed. Includes real local HTTP and slow-body deadline checks. |
+| Codex `0.162.1` form protocol | Approve, Deny, More information, decline, and cancel passed with an inert MCP fixture. |
+| Codex CLI UI | The real CLI displayed all 3 choices. A scripted Enter key selected Approve in the inert fixture. |
+| Fresh local plugin | A disposable profile loaded the bundled server without manual MCP registration. Approve, Deny, Cancel, and More information with final approval passed. |
+| Native host validation | Claude marketplace validation passed with the known catalog-policy warning. Hermes validation and doctor found all 3 registered hooks. |
+| Codex complete hook flow | Deny, bundled review, exact retry, and denial of reuse passed. Approval caused one localhost request. Deny and Cancel caused none. |
+| Benchmark and pilot tools | 6 benchmark tests and 6 pilot tests passed. No generated results or model training artifacts were added. |
+
+These tests used a scripted model and scripted client responses, not real human consent.
+The hook-flow test trusted only the tested definitions in a disposable profile through Codex configuration RPC.
+It did not change or bypass trust in the user's profile.
+The network fixture used an invalid hostname pinned to the local test server with curl `--resolve`.
+No request went to a third-party target.
+
+Hermes doctor reported that the parser packages were not in the Hermes environment.
+The gate deliberately keeps them in its separate runtime. Host registration still passed.
+Run explicit setup with the Hermes Python version before you use the plugin.
+
+Codex MCP arguments do not expand hook-root variables in this tested version.
+The bundled configuration sets a relative `cwd` to the plugin root instead.
+It explicitly passes state and runtime overrides to keep both processes on the same store.
+
+Codex rejected a form schema with a root `title`. The server uses the tested schema without that field.
+The client supplies consistent `sessionId`, `threadId`, and turn metadata.
+The server rejects missing or mismatched metadata and automatic reviewers.
+
+This check did not repeat real-human Claude or Hermes approvals, the full historical attack matrix, or fresh GitHub installation.
+It did not establish Laya accuracy, production latency, complete secret redaction, or an OS isolation boundary.
+Windows and macOS were not tested. Exact Codex MCP grants currently require POSIX locks.
+
+### Previous local check: 2026-10-10
 
 These checks used the pinned tree-sitter packages in a temporary runtime.
 No live host profile changed.
@@ -93,6 +135,26 @@ python3 adapters/test_adapters.py
 python3 adapters/test_plugins.py
 ```
 
+For all new context and MCP tests, use the prepared gate runtime:
+
+```bash
+python3 adapters/bootstrap.py --setup --mcp
+GATE_TEST_PYTHON="$(python3 -c 'from adapters.bootstrap import check_runtime; print(check_runtime())')"
+"$GATE_TEST_PYTHON" -B -m unittest discover -s adapters -p 'test*.py'
+"$GATE_TEST_PYTHON" -B -m unittest discover -s benchmarks/laya -p 'test_*.py'
+"$GATE_TEST_PYTHON" -B -m unittest discover -s benchmarks/laya/pilot -p 'test_*.py'
+```
+
+The inert Codex compatibility test uses an installed Codex CLI and a local mock model.
+It tests forms, a fresh plugin profile, and an exact-action retry:
+
+```bash
+python3 e2e/check_elicitation.py --mcp-python "$GATE_TEST_PYTHON" --plugin --cli --flow
+```
+
+It creates disposable profiles and makes no model API request.
+Client responses and test-profile hook trust are scripted. They are not human consent.
+
 Install `requirements.txt` in a development virtual environment for full-parser tests.
 The adapter and plugin tests use local fixtures and terminal simulations.
 They create temporary `.gate-tests-*` directories inside the repository and remove them after the run.
@@ -170,6 +232,8 @@ Do not count that case as proof that the gate stopped the action.
 | [`probe_corpus.py`](../probe_corpus.py) | Attack classifications and clean-command review counts. |
 | [`adapters/test_adapters.py`](../adapters/test_adapters.py) | Host context, decisions, approvals, errors, and contract regressions. |
 | [`adapters/test_plugins.py`](../adapters/test_plugins.py) | Manifests, runtime setup, migration, file modes, Hermes, and failure cases. |
+| [`adapters/test_context.py`](../adapters/test_context.py) | Context limits, redaction, exact grants, client metadata, and optional HTTP advice. |
+| [`e2e/check_elicitation.py`](../e2e/check_elicitation.py) | Installed Codex form UI, bundled MCP loading, and an inert hook-to-grant round trip. |
 | [`e2e/run_matrix.py`](../e2e/run_matrix.py) | Real host CLIs and paired attack controls. |
 | [`e2e/mock.py`](../e2e/mock.py) | Scripted API responses and the separate collector. |
 

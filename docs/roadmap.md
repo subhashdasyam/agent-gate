@@ -6,30 +6,41 @@ The list does not promise dates, model names, or new services.
 ### Future-state diagram
 
 The diagram shows the proposed design, not a released system.
-Solid borders show available components. Dashed borders show planned changes.
-Dashed arrows show the optional Laya path.
+Solid borders show branch components. Dashed borders show planned changes.
+Dashed arrows show the optional Laya path, which is now available but off by default.
 
 The adapter row shows the available native Hermes plugin.
-Full live approval and remote-backend validation remain future work.
+Claude and Hermes interactive approval tests and remote-backend validation remain future work.
 
 ![Future-state diagram: optional Laya, policy floor, human approval, and OS isolation.](../agent-gate-future-state.drawio.png)
 
 [Edit the draw.io file](../agent-gate-future-state.drawio) · [Open the full-size preview](../agent-gate-future-state.drawio.png)
 
-Laya cannot lower `review` or `block`.
+The installed Laya path cannot lower any deterministic decision.
 A missing, invalid, or late model reply keeps the deterministic floor.
 The proposed deployment keeps gate code and approval state external to agent write access.
 A one-time approval permits only an exact retry through the gate.
 
 ### Laya: connect the optional decision layer
 
-- [ ] Connect a Laya typed decision to `model_verdict` and `model_conf` at the available merge point.
-- [ ] Define and validate the verdict schema and numeric confidence range before the core receives a decision.
-- [ ] Set a model-call deadline. Keep the deterministic floor when Laya is not available, returns invalid data, or exceeds the deadline.
-- [ ] Keep `review` and `block` immutable with model input. Permit only the confident `log`-to-`run` reduction that the merge rules allow.
-- [ ] Add regressions for escalation, low confidence, invalid verdicts, malformed confidence, timeouts, and models that are not available.
+- [x] Add an optional typed-decision client after deterministic checks for all 3 adapters.
+- [x] Validate the measured response schema, all probabilities, confidence ranges, and truncation status.
+- [x] Set a 2-second process deadline without retries. Keep the policy decision on invalid, unavailable, or late replies.
+- [x] Permit escalation only. Do not lower `run`, `log`, `review`, or `block` through model advice.
+- [x] Add regressions for escalation, malformed replies, truncation, deadlines, and unavailable models.
 - [ ] Compare deterministic-only and Laya-assisted results for review noise, attack coverage, and latency before any default change.
-- [ ] Write the model configuration and data-protection instructions. Select the permitted input data and the treatment of secrets.
+- [x] Document endpoint settings, permitted evidence fields, redaction, and data-protection limits.
+- [ ] Validate the real configured service on representative tasks. Do not treat transport tests as model-quality proof.
+
+### Context and approval workflow
+
+- [x] Capture prompt history and untrusted tool results with host and session scope.
+- [x] Keep context bounded and mark missing IDs and truncated data.
+- [x] Bundle a Codex stdio MCP server with client-session checks and native approval forms.
+- [x] Bind Codex grants to all arguments, the actual tool, directory, and session. Apply expiry and atomic single-use consumption.
+- [x] Keep Claude and Hermes native approvals. Keep legacy terminal approval as an explicit Codex option.
+- [ ] Add broader real-human UI tests, client-version coverage, and state-maintenance procedures.
+- [ ] Design bounded task grants with explicit user scope and resource limits. Natural-language task text is not a grant.
 
 ### Integration and coverage
 
@@ -64,11 +75,13 @@ If Laya is unavailable or late, the core must keep its deterministic floor.
 The integration must reject malformed verdicts and confidence values.
 
 The model must not reduce `review` or `block`.
-A `log` reduction must have valid confidence of at least `0.40`.
+The installed adapter must not reduce `log`. The older direct Python API retains its separate confidence rule.
 A comparison must report attack coverage, clean-command reviews, and total latency separately.
 
 The operator must select the permitted model input.
 Secret contents must not enter the model request without an explicit data policy.
-The project does not yet select a Laya endpoint, model, service, or launch method.
+The project selects no private endpoint or deployment method.
+Operators configure an available `/v1/systemone` service explicitly.
+This branch does not start, train, or change a model service.
 
 [Documentation index](README.md)

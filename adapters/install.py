@@ -79,17 +79,20 @@ def claude_config(user_origin=False):
         "PreToolUse": [{"matcher": "Bash|Monitor|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
                         "hooks": [hook]}],
         "CwdChanged": [{"hooks": [dict(hook)]}],
+        "UserPromptSubmit": [{"hooks": [dict(hook)]}],
+        "PostToolUse": [{"hooks": [dict(hook)]}],
+        "PostToolUseFailure": [{"hooks": [dict(hook)]}],
     }}
-    if user_origin:
-        cfg["hooks"]["UserPromptSubmit"] = [{"hooks": [dict(hook)]}]
     return cfg
 
 
 def codex_config():
-    return {"hooks": {"PreToolUse": [{
+    hook = {"type": "command", "command": _cmd("codex_hook.py"), "timeout": 30,
+            "statusMessage": "agent-gate"}
+    return {"hooks": {"UserPromptSubmit": [{"hooks": [dict(hook)]}],
+        "PostToolUse": [{"hooks": [dict(hook)]}], "PreToolUse": [{
         "matcher": "^(Bash|apply_patch)$",
-        "hooks": [{"type": "command", "command": _cmd("codex_hook.py"), "timeout": 30,
-                   "statusMessage": "agent-gate"}]}]}}
+        "hooks": [hook]}]}}
 
 
 def merge(path, new, remove=False):

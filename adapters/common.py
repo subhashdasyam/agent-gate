@@ -106,7 +106,7 @@ def _ensure_dir():
 
 
 @contextlib.contextmanager
-def _locked_json(path, default):
+def _locked_json(path, default, strict=False):
     """Read-modify-write a JSON file under an exclusive lock."""
     _ensure_dir()
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
@@ -118,11 +118,15 @@ def _locked_json(path, default):
             try:
                 data = json.loads(text) if text.strip() else default
             except ValueError:
+                if strict:
+                    raise ValueError("State is corrupt. Stop and ask the operator to inspect it.")
                 data = default
             yield data
             fh.seek(0)
             fh.truncate()
             json.dump(data, fh)
+            # Publish buffered state before another process can acquire the lock.
+            fh.flush()
         finally:
             if fcntl:
                 fcntl.flock(fh, fcntl.LOCK_UN)

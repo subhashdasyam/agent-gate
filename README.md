@@ -12,7 +12,9 @@ The deterministic policy works without a model.
 - Finds recognized secret transfers, unsafe writes, downloads, and persistent changes.
 - Examines shell code inside supported scripts, package files, CI files, and patches.
 - Tracks downloaded files across calls and protects recognized access to gate code and state.
-- Gets human approval for review decisions through the host or an exact-call retry.
+- Keeps bounded prompt history and tool results as evidence, not permission.
+- Gets human approval in the same host session. Codex uses a bundled MCP server.
+- Adds optional Laya advice. A model cannot lower the deterministic decision.
 
 | Decision | Effect |
 |---|---|
@@ -30,11 +32,12 @@ An agent with your account can alter hooks or forge approval state outside the g
 
 The native hooks use a shared parser runtime and the deterministic policy.
 The adapters apply the decision before tool execution.
-No installed adapter calls Laya.
+Prompt and result hooks keep context for the next action.
+Laya stays off unless the operator configures an endpoint.
 
 ![Current architecture: Claude Code, Codex, Hermes, parser runtime, policy, decisions, and human approvals.](agent-gate-architecture.drawio.png)
 
-[Editable draw.io file](agent-gate-architecture.drawio) · [Full-size image](agent-gate-architecture.drawio.png)
+[Editable draw.io file](agent-gate-architecture.drawio) · [Vector preview](agent-gate-architecture.drawio.svg)
 
 ## Quick start
 
@@ -80,12 +83,13 @@ The installed path and Python version can differ between hosts.
 For a checkout, use:
 
 ```bash
-python3 adapters/bootstrap.py --setup
-python3 adapters/bootstrap.py --doctor
+python3 adapters/bootstrap.py --setup --mcp
+python3 adapters/bootstrap.py --doctor --mcp
 ```
 
 Only explicit setup downloads packages.
 Tool hooks never install dependencies.
+The `--mcp` option prepares Codex approvals. Claude and Hermes need only `--setup`.
 Restart the host after setup.
 Confirm that the plugin and hooks are active.
 
@@ -93,25 +97,22 @@ Refer to [installation and approvals](docs/integrations.md) for local developmen
 
 ## Future state
 
-Laya is optional future work, not an available integration.
-A future model decision cannot lower `review` or `block`.
-The proposal also adds stronger deployment boundaries and more validation.
+The optional Laya client is available in this branch, with a 2-second deadline.
+Production validation, protected deployment, and bounded task grants remain future work.
 
 ![Future proposal: optional Laya, deterministic policy floor, human approval, and OS isolation.](agent-gate-future-state.drawio.png)
 
-[Editable draw.io file](agent-gate-future-state.drawio) · [Full-size image](agent-gate-future-state.drawio.png)
+[Editable draw.io file](agent-gate-future-state.drawio) · [Vector preview](agent-gate-future-state.drawio.svg)
 
-Solid outlines show available components.
-Dashed outlines show future work, such as Laya.
-Live approval and remote-backend validation remain future work.
+Solid outlines show available components. Dashed outlines show future work.
+Claude and Hermes interactive validation and remote-backend checks remain future work.
 Refer to the [complete roadmap and Laya TODOs](docs/roadmap.md).
 
 ## Technical documentation
 
-[Documentation index](docs/README.md) · [Architecture](docs/architecture.md) · [Policy and API](docs/policy-and-api.md) · [Tests and limits](docs/testing-and-limits.md)
+[Documentation index](docs/README.md) · [Context and approvals](docs/context-and-approvals.md) · [Policy and API](docs/policy-and-api.md) · [Tests and limits](docs/testing-and-limits.md)
 
-The 2026-10-10 checks passed 54 core checks and 128 adapter checks.
-The 20 plugin tests passed on Python 3.11 and 3.12.
-The pinned-parser corpus caught 318/318 attack probes.
-These results do not prove complete protection.
+Codex `0.162.1` passed native form and bundled-server checks in isolated test profiles.
+Scripted responses test the transport, not real human consent.
+The pinned-parser corpus caught 318/318 attack probes. This does not prove complete protection.
 Refer to the [dated evidence and test limits](docs/testing-and-limits.md).
