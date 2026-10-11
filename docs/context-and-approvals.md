@@ -68,7 +68,7 @@ Keep state private. Select a trusted model endpoint before you enable Laya.
 3. For `review`, the adapter stores the complete action and returns a denial with its review ID.
 4. The agent calls `request_review(request_id)` on the bundled MCP server.
 5. The server checks the client session metadata. Automatic reviewers cannot issue a grant.
-6. Codex shows a native form: **Approve**, **Deny**, or **More information**.
+6. If the client supports forms and permits prompts, Codex shows **Approve**, **Deny**, or **More information**.
 7. Only the exact client response `{"decision":"Approve"}` can mark the request approved.
 8. The agent retries the unchanged action. The gate checks policy again and consumes the grant atomically.
 9. A second use is denied. A new policy block also denies the action.
@@ -103,6 +103,13 @@ More information opens one final form with grant scope and expiry details.
 It still requires an explicit Approve response.
 
 Deny, decline, cancel, timeout, and invalid responses create no grant.
+Only an exact accepted **Deny** response records `denied` for a new review.
+
+Protocol decline records `client-declined`. It does not identify the person or policy that declined the request.
+Missing form capability or a missing response channel records `review-unavailable`.
+The recovery message explains how the user can enable interactive reviews without a full-access request.
+Refer to [Codex review forms](integrations.md#codex-review-forms) for the command and its limits.
+
 Closed requests cannot open another prompt for the same action in the same session.
 The agent must stop. It must not change the command to avoid the decision.
 
@@ -130,8 +137,18 @@ Codex defaults to the bundled MCP path.
 Set `GATE_APPROVAL_TRANSPORT=terminal` only to retain the legacy external-terminal flow.
 Manual hook installation does not register the bundled MCP server.
 Use the native plugin for in-session Codex approvals.
+
 Headless clients that cannot answer elicitation must stay stopped.
 Do not substitute a custom chat approval parser.
+
+`check_review_support` provides an optional form check for setup or user-requested diagnosis.
+The user confirms one harmless form. The check never creates or changes a grant.
+It requires the same verified session metadata and human reviewer as `request_review`.
+It does not store approval readiness or infer the effective policy from user configuration files.
+
+Setup and doctor always report form support as unverified.
+Use the form check in the actual session to verify the current connection.
+The successful result applies only to the current connection.
 
 ## Optional Laya advice
 

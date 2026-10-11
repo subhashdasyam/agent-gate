@@ -101,7 +101,8 @@ def prepare(p, command, root, mode):
 def _review_message(rid, sid):
     status = R.details(rid, sid)["status"]
     if status != "pending":
-        C.deny_exit(f"agent-gate: review {rid} is {status}. Stop; do not work around this decision.")
+        help_text = R.outcome_message(status) if status in ("client-declined", "review-unavailable") else ""
+        C.deny_exit(f"agent-gate: review {rid} is {status}. Stop. Do not work around this decision. " + help_text)
     C.deny_exit(f"agent-gate review. Review ID: {rid}. Call the agent_gate MCP request_review tool "
                 f"with request_id={rid}. Retry the unchanged command only after approval. Chat text is not a grant.")
 

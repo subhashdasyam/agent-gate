@@ -80,9 +80,10 @@ def cli_probe(folder, env, model_logs):
         os.close(master)
 
 
-def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
+def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
+          policy="on-request", readiness=False):
     responses = list(reply) if isinstance(reply, list) else [reply]
-    final_reply = responses[-1]
+    final_reply = responses[-1] if policy != "never" else {"action": "decline", "content": None}
     with tempfile.TemporaryDirectory(prefix="gate-elicitation-") as folder:
         home = Path(folder)
         project = home / "project" if code_mode else home
@@ -191,7 +192,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 trusted = receive(lambda m: m.get("id") == 7)
                 assert all(row["trustStatus"] == "trusted" for row in trusted["result"]["data"][0]["hooks"]), trusted
             send({"id": 2, "method": "thread/start", "params": {
-                "cwd": str(project), "approvalPolicy": "on-request",
+                "cwd": str(project), "approvalPolicy": policy,
                 "sandbox": "workspace-write" if code_mode else "danger-full-access" if flow else "read-only",
                 "approvalsReviewer": "user", "ephemeral": not flow}})
             started = receive(lambda m: m.get("id") == 2)
@@ -204,19 +205,19 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 old_state = C.STATE_DIR
                 C.STATE_DIR = env["GATE_STATE_DIR"]
                 try:
-                    if not flow:
+                    if not flow and not readiness:
                         rid, _ = R.pending("codex", tid, folder, "Bash", {"cmd": "printf inert"},
                             {"decision": "review", "why": ["fixture"], "detail": {"fixture": "No command runs."}})
                 finally:
                     C.STATE_DIR = old_state
-                if not flow:
+                if not flow and not readiness:
                     request_args["request_id"] = rid
                 # The namespace of a bundled server is a client detail. Discover its actual name.
                 send({"id": 4, "method": "mcpServerStatus/list", "params": {}})
                 servers = receive(lambda m: m.get("id") == 4)
                 assert "result" in servers, servers
                 names = [f"mcp__{s['name']}__{name}" for s in servers["result"]["data"] for name in s.get("tools", {})
-                         if name.endswith("request_review")]
+                         if name.endswith("check_review_support" if readiness else "request_review")]
                 assert len(names) == 1, (servers, errors[-20:])
                 function = names[0]
                 mock.scenario = lambda: {"function": function, "arguments": request_args}
@@ -258,17 +259,32 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                            and set(row["tool_input"]) == {"command"} for row in captured), captured
                 assert str(target) in outputs and "--disable code_mode" not in outputs, outputs
                 assert (target / "guard-proof").exists() == (final_reply.get("content") == {"decision": "Approve"})
-            assert len(elicitations) == (len(reply) if isinstance(reply, list) else 1), (elicitations, model_logs[-15:], errors[-30:],
+            expected_forms = 0 if policy == "never" else len(reply) if isinstance(reply, list) else 1
+            assert len(elicitations) == expected_forms, (elicitations, model_logs[-15:], errors[-30:],
                 [str(path.relative_to(home)) for path in (home / "gate-state").rglob("*")],
                 trusted if flow else None,
                 (home / "captured-hooks.jsonl").read_text() if code_mode else None)
-            request = elicitations[0]
-            assert request["threadId"] == tid, request
-            assert request["requestedSchema"].get("properties", {}).get("decision", {}).get("enum") == [
-                "Approve", "Deny", "More information"], request
+            if elicitations:
+                request = elicitations[0]
+                assert request["threadId"] == tid, request
+                assert request["requestedSchema"].get("properties", {}).get("decision", {}).get("enum") == (
+                    ["Confirm form"] if readiness else ["Approve", "Deny", "More information"]), request
             if len(elicitations) == 2:
                 assert elicitations[1]["requestedSchema"]["properties"]["decision"]["enum"] == ["Approve", "Deny"]
             tool_results = [entry for entry in model_logs if "codex_tool_result" in entry]
+            if plugin and not flow:
+                outputs = tool_results[-1]["codex_tool_result"][-1]["output"]
+                parsed = json.loads(next(block["text"] for block in outputs if block["text"].startswith("{")))
+                if policy == "never":
+                    assert parsed["status"] == "client-declined", parsed
+                    assert not parsed["approved"], parsed
+                    assert "codex -a on-request -c approvals_reviewer=user" in parsed["message"], parsed
+                if readiness:
+                    assert parsed["review_ready"] == (final_reply.get("content") == {"decision": "Confirm form"}), parsed
+                    assert not parsed["approved"], parsed
+                    assert not (home / "gate-state" / "reviews.json").exists()
+                    return {"approval_policy": policy, "setup_status": parsed["status"],
+                            "elicitation_count": len(elicitations), "grants_created": 0}
             if plugin:
                 C.STATE_DIR = env["GATE_STATE_DIR"]
                 try:
@@ -276,7 +292,10 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                         rid = request_args["request_id"]
                     row = R.details(rid, tid)
                     assert row["status"] == (("used" if flow else "approved") if final_reply.get("content") == {"decision": "Approve"}
-                                             else "denied" if final_reply["action"] != "cancel" else "cancelled"), row
+                                             else "client-declined" if final_reply["action"] == "decline"
+                                             else "cancelled" if final_reply["action"] == "cancel" else "denied"), row
+                    if policy == "never":
+                        assert "codex -a on-request -c approvals_reviewer=user" in json.dumps(model_logs), model_logs
                     if flow:
                         effects = int((target / "guard-proof").exists()) if code_mode else sum(
                             entry.get("GET") == "/fixture" for entry in model_logs)
@@ -291,6 +310,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 assert parsed["action"] == final_reply["action"], parsed
                 assert parsed["client_meta"]["sessionId"] == tid, parsed
             return {"reply": reply, "elicitation_count": len(elicitations),
+                    "approval_policy": policy,
                     "thread_bound": True, "schema_choices": 3, "bundled_plugin": plugin,
                     "hook_round_trip": flow, "code_mode": code_mode,
                     "network_effects": effects if flow and not code_mode else 0,
@@ -327,19 +347,26 @@ def main():
         for reply in ({"action": "accept", "content": {"decision": "Approve"}},
                       {"action": "accept", "content": {"decision": "Deny"}},
                       {"action": "cancel", "content": None},
+                      {"action": "decline", "content": None},
                       [{"action": "accept", "content": {"decision": "More information"}},
                        {"action": "accept", "content": {"decision": "Approve"}}]):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True)), flush=True)
+        for policy in ("on-request", "never"):
+            print(json.dumps(probe(args.mcp_python, {"action": "accept", "content": {"decision": "Confirm form"}},
+                                   plugin=True, policy=policy, readiness=True)), flush=True)
+        print(json.dumps(probe(args.mcp_python, None, plugin=True, policy="never")), flush=True)
     if args.flow:
         for reply in ({"action": "accept", "content": {"decision": "Approve"}},
                       {"action": "accept", "content": {"decision": "Deny"}},
                       {"action": "cancel", "content": None}):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True)), flush=True)
+        print(json.dumps(probe(args.mcp_python, None, plugin=True, flow=True, policy="never")), flush=True)
     if args.code_mode:
         for reply in ({"action": "accept", "content": {"decision": "Approve"}},
                       {"action": "accept", "content": {"decision": "Deny"}},
                       {"action": "cancel", "content": None}):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True, code_mode=True)), flush=True)
+        print(json.dumps(probe(args.mcp_python, None, plugin=True, flow=True, code_mode=True, policy="never")), flush=True)
 
 
 if __name__ == "__main__":

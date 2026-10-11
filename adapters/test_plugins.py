@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plugin and native Hermes regressions. All writes use temporary test paths."""
 import importlib.util
+import io
+from contextlib import redirect_stdout
 import json
 import os
 from pathlib import Path
@@ -100,12 +102,29 @@ class PluginTests(unittest.TestCase):
                 patch.object(bootstrap.venv, "EnvBuilder"), \
                 patch.object(bootstrap.subprocess, "run") as run, \
                 patch.object(bootstrap, "verify_runtime"), patch.object(bootstrap, "verify_mcp") as verify:
-            bootstrap.prepare_runtime(with_mcp=True)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                bootstrap.prepare_runtime(with_mcp=True)
+            self.assertIn("review forms: not verified", output.getvalue())
+            self.assertIn("check_review_support once", output.getvalue())
             self.assertEqual(run.call_count, 2)
             self.assertTrue((bootstrap.runtime_dir() / "mcp-ready").is_file())
             bootstrap.prepare_runtime(with_mcp=True)
             self.assertEqual(run.call_count, 2)
             self.assertEqual(verify.call_count, 2)
+
+    def test_mcp_doctor_does_not_claim_forms_are_ready(self):
+        with patch.dict(os.environ, {"GATE_RUNTIME_DIR": str(self.tmp / "runtime")}), \
+                patch.object(bootstrap, "check_runtime", return_value="python"), \
+                patch.object(bootstrap, "verify_runtime"), patch.object(bootstrap, "verify_mcp"), \
+                patch.object(bootstrap.subprocess, "run"):
+            bootstrap.runtime_dir().mkdir(parents=True)
+            (bootstrap.runtime_dir() / "mcp-ready").touch()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(bootstrap.main(["--doctor", "--mcp"]), 0)
+            self.assertIn("Codex review forms: not verified here", output.getvalue())
+            self.assertIn("creates no grant", output.getvalue())
 
     def test_hermes_observers_forward_host_context_only(self):
         with patch.object(plugin, "_observe") as observe:

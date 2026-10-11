@@ -59,7 +59,7 @@ See the [Codex hook guide](https://learn.chatgpt.com/docs/hooks).
 The plugin also bundles a local stdio MCP server for in-session approvals.
 No manual `codex mcp add` command is necessary.
 Prepare the MCP runtime explicitly with `--setup --mcp`, then restart Codex.
-Confirm that `request_review` and `review_details` are available.
+Confirm that `request_review`, `review_details`, and `check_review_support` are available.
 
 The MCP process uses the installed plugin directory, not the project directory.
 State and runtime environment overrides are passed to that process.
@@ -67,6 +67,59 @@ The manifest does not put secrets in configuration.
 
 This repository supplies its own marketplace.
 Hook plugins are not eligible for the public Codex plugin directory under the current [publication rules](https://developers.openai.com/plugins/build/plugins).
+
+#### Codex review forms
+
+The default interactive Codex policy is `on-request`, not `never`.
+Routine actions inside the sandbox do not need a prompt.
+Refer to the [OpenAI default configuration](https://learn.chatgpt.com/docs/config-file/config-sample).
+
+Runtime setup does not prove that Codex can show a review form.
+`--doctor --mcp` reports form support as unverified.
+Codex launch options, profiles, host settings, and administrator restrictions can affect approval prompts.
+The MCP response does not expose the effective approval policy.
+
+After setup and restart, ask Codex:
+
+```text
+Call the Agent Gate check_review_support tool once to check whether I can see a review form.
+```
+
+Select **Confirm form** if the form appears.
+The check runs no command, writes no review state, and creates no grant.
+It confirms the current connection only.
+Do not repeat this check before every tool call.
+
+Codex can automatically decline MCP forms when its policy is `never`.
+A granular policy can also disable forms with `mcp_elicitations=false`.
+An MCP `decline` response does not identify a human decision.
+Agent Gate reports `client-declined`, not a user-selected **Deny**.
+Missing form capability or a missing response channel produces `review-unavailable`.
+Refer to the [OpenAI approval settings](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+If no form appears, stop the current session.
+In your own terminal, start an interactive session:
+
+```bash
+codex -a on-request -c approvals_reviewer=user
+```
+
+This command enables approval prompts and selects the human reviewer for the new session.
+It does not request full access, disable the sandbox, approve an action, or change saved configuration.
+Code Mode stays enabled if your configuration enables it.
+The command does not remove administrator restrictions.
+
+Keep your required sandbox and profile options if you use them.
+Use a Codex client that supports MCP forms.
+Do not remove administrator restrictions to force a prompt.
+Only approve actions that you trust.
+Do not restart to override a human denial.
+
+No configuration change can guarantee that an action is safe.
+The gate keeps review actions stopped without an exact client approval.
+Explicit **Deny**, cancel, timeout, and invalid responses create no grant.
+Closed requests stay closed in the same session.
+The plugin never executes the recovery command or changes your Codex configuration.
 
 ### Hermes
 

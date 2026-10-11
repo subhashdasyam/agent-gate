@@ -199,6 +199,11 @@ python3 e2e/check_elicitation.py --mcp-python "$GATE_TEST_PYTHON" --plugin --cli
 
 It creates disposable profiles and makes no model API request.
 Client responses and test-profile hook trust are scripted. They are not human consent.
+
+The plugin checks include `on-request` and `never` policies.
+The setup check must never create a grant.
+The `never` checks must show zero forms and zero action effects, with the interactive recovery command in the result.
+
 The direct-tool profile explicitly disables code mode.
 The Code Mode profile checks actual runtime facts, native approvals, guarded execution, and denial of grant reuse.
 The fixture writes only an inert file inside its temporary workspace.

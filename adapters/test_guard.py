@@ -244,7 +244,8 @@ class GuardTests(unittest.TestCase):
             self.prepare(self.command if os.name == "nt" else "python3 -c 'print(1)'")
 
     def test_cancelled_timed_out_and_expired_grants_stay_stopped(self):
-        for status in ("cancelled", "timed-out", "expired"):
+        for status in ("cancelled", "timed-out", "expired", "client-declined",
+                       "review-unavailable", "invalid-response"):
             command = (f"Write-Output '{status}'" if os.name == "nt" else f"python3 -c 'print(\"{status}\")'")
             self.probe(command)
             action = json.loads((Path(self.state_dir) / "dispatch.json").read_text())["actions"][D._id("s1", command)]
@@ -257,6 +258,11 @@ class GuardTests(unittest.TestCase):
                 R.finish(rid, "s1", nonce, status)
             with self.assertRaises(Refused):
                 self.prepare(command)
+            message = C.deny_exit.call_args.args[0]
+            if status in ("client-declined", "review-unavailable"):
+                self.assertIn("codex -a on-request -c approvals_reviewer=user", message)
+            else:
+                self.assertNotIn("codex -a", message)
 
     def test_expired_ticket_does_not_start_executor(self):
         _, ticket = self.prepare()

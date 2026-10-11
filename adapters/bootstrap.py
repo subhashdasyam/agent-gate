@@ -17,6 +17,9 @@ import platform_support as P
 
 SCRIPTS = {"claude": "claude_code_hook.py", "codex": "codex_hook.py",
            "hermes": "hermes_gated.py", "approve": "gate_approve.py", "mcp": "approval_mcp.py"}
+REVIEW_CHECK_HELP = ("Codex review forms: not verified here. In the new Codex session, "
+                     "ask Agent Gate to call check_review_support once. "
+                     "The check runs no command and creates no grant.")
 
 
 def runtime_dir():
@@ -81,6 +84,8 @@ def prepare_runtime(with_mcp=False):
             (target / "mcp-ready").write_text("mcp==2.0.0\n", encoding="utf-8")
         print(f"Parser runtime ready: {py}")
     print("Restart the agent. Check that the plugin and its hooks are active.")
+    if with_mcp:
+        print(REVIEW_CHECK_HELP)
 
 
 def main(argv):
@@ -98,6 +103,8 @@ def main(argv):
             subprocess.run([str(py), "-I", str(ROOT / "adapters" / "common.py"), "--doctor"],
                            check=True, timeout=30)
             print("Runtime ready. This check does not prove host hook trust or tool coverage.")
+            if "--mcp" in argv:
+                print(REVIEW_CHECK_HELP)
             return 0
         if not argv or argv[0] not in SCRIPTS or (len(argv) > 1 and argv[0] != "approve"):
             raise ValueError("Use --setup [--mcp], --doctor [--mcp], claude, codex, hermes, mcp, or approve [ID].")

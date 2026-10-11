@@ -422,7 +422,8 @@ class ApprovalTests(StateFixture, unittest.IsolatedAsyncioTestCase):
             return SimpleNamespace(action=response[0], content=response[1])
 
         return SimpleNamespace(request_context=SimpleNamespace(meta=meta,
-            session=SimpleNamespace(elicit_form=elicit)), request_id="call1")
+            session=SimpleNamespace(elicit_form=elicit, can_send_request=True,
+                client_capabilities=SimpleNamespace(elicitation=SimpleNamespace(form={})))), request_id="call1")
 
     async def test_only_client_approval_issues_grant(self):
         rid, _ = self.pending()
@@ -433,15 +434,125 @@ class ApprovalTests(StateFixture, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("title", self.sent[0][1])
 
     async def test_deny_decline_cancel_and_malformed_accept_never_approve(self):
-        for i, response in enumerate((("accept", {"decision": "Deny"}), ("decline", None),
-                ("cancel", None), ("accept", {"approved": True}),
-                ("accept", {"decision": "Approve", "extra": "anything"}))):
+        cases = ((("accept", {"decision": "Deny"}), "denied"), (("decline", None), "client-declined"),
+                 (("cancel", None), "cancelled"), (("accept", {"approved": True}), "invalid-response"),
+                 (("accept", {"decision": "Approve", "extra": "anything"}), "invalid-response"))
+        for i, (response, expected) in enumerate(cases):
             rid, _ = self.pending(args={"cmd": "printf inert " + str(i)})
             result = await self.M.request_review(rid, self.client([response]))
             self.assertFalse(result["approved"])
+            self.assertEqual(result["status"], expected)
+            self.assertEqual(R.details(rid, "s1")["status"], expected)
+            self.assertFalse(R.consume(rid, "s1", R.details(rid, "s1")["sha"]))
+            if expected == "client-declined":
+                self.assertIn("does not prove", result["message"])
+                self.assertIn("codex -a on-request -c approvals_reviewer=user", result["message"])
+            if expected == "denied":
+                self.assertNotIn("codex -a", result["message"])
             repeat = await self.M.request_review(rid, self.client([]))
             self.assertFalse(repeat["approved"])
             self.assertEqual(len(self.sent), 0)
+            if expected == "client-declined":
+                self.assertIn("codex -a", repeat["message"])
+
+    async def test_setup_check_never_creates_or_changes_a_grant(self):
+        rid, _ = self.pending()
+        nonce, _ = R.claim(rid, "s1")
+        R.finish(rid, "s1", nonce, "approved")
+        store = self.tmp / "state" / "reviews.json"
+        before = store.read_bytes()
+        result = await self.M.check_review_support(self.client([("accept", {"decision": "Confirm form"})]))
+        self.assertTrue(result["review_ready"])
+        self.assertFalse(result["approved"])
+        self.assertEqual(store.read_bytes(), before)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0][1]["properties"]["decision"]["enum"], ["Confirm form"])
+
+    async def test_failed_setup_check_never_claims_readiness_or_creates_state(self):
+        for response, expected in ((("decline", None), "client-declined"), (("cancel", None), "cancelled"),
+                                  (("accept", {"decision": "Approve"}), "invalid-response"),
+                                  (("accept", {"decision": "Deny"}), "invalid-response"),
+                                  (("accept", {"decision": "Confirm form", "extra": True}), "invalid-response")):
+            result = await self.M.check_review_support(self.client([response]))
+            self.assertEqual(result["status"], expected)
+            self.assertFalse(result["review_ready"])
+            self.assertFalse(result["approved"])
+        self.assertFalse((self.tmp / "state" / "reviews.json").exists())
+
+    async def test_no_form_capability_or_channel_stops_without_a_prompt(self):
+        for i, capabilities in enumerate((None, SimpleNamespace(elicitation=None),
+                SimpleNamespace(elicitation=SimpleNamespace(form=None)),
+                SimpleNamespace(elicitation=SimpleNamespace(form={})))):
+            client = self.client([])
+            client.request_context.session.client_capabilities = capabilities
+            if i == 3:
+                client.request_context.session.can_send_request = False
+            result = await self.M.check_review_support(client)
+            self.assertEqual(result["status"], "review-unavailable")
+            self.assertFalse(result["review_ready"])
+            if i == 0:
+                self.assertFalse((self.tmp / "state" / "reviews.json").exists())
+            rid, _ = self.pending(args={"cmd": "printf missing_form " + str(i)})
+            result = await self.M.request_review(rid, client)
+            self.assertEqual(result["status"], "review-unavailable")
+            self.assertFalse(result["approved"])
+            self.assertEqual(R.details(rid, "s1")["status"], "review-unavailable")
+            self.assertEqual(len(self.sent), 0)
+
+    async def test_unsupported_form_error_returns_help_and_closes_review(self):
+        for i, error in enumerate((self.M.NoBackChannelError("elicitation/create"),
+                                  self.M.MCPError(self.M.METHOD_NOT_FOUND, "No forms"))):
+            client = self.client([])
+            async def unavailable(*args, **kwargs):
+                raise error
+            client.request_context.session.elicit_form = unavailable
+            setup = await self.M.check_review_support(client)
+            self.assertFalse(setup["review_ready"])
+            self.assertEqual(setup["status"], "review-unavailable")
+            rid, _ = self.pending(args={"cmd": "printf unsupported " + str(i)})
+            result = await self.M.request_review(rid, client)
+            self.assertEqual(result["status"], "review-unavailable")
+            self.assertFalse(result["approved"])
+            self.assertIn("codex -a", result["message"])
+
+    async def test_setup_check_requires_verified_session_and_user_reviewer(self):
+        for meta in ({"sessionId": "other"}, {"threadId": "other"},
+                     {"x-codex-turn-metadata": {"session_id": "s1", "auto_review_enabled": True}}):
+            with self.assertRaises(ValueError):
+                await self.M.check_review_support(self.client([], **meta))
+            self.assertEqual(len(self.sent), 0)
+
+    async def test_second_form_decline_is_not_a_human_deny(self):
+        rid, _ = self.pending()
+        result = await self.M.request_review(rid, self.client([
+            ("accept", {"decision": "More information"}), ("decline", None)]))
+        self.assertEqual(result["status"], "client-declined")
+        self.assertFalse(result["approved"])
+        self.assertEqual(len(self.sent), 2)
+
+    async def test_direct_hook_keeps_closed_review_stopped_with_accurate_help(self):
+        for status in ("client-declined", "review-unavailable", "denied"):
+            args = {"cmd": "printf closed " + status}
+            rid, _ = self.pending(args=args)
+            nonce, _ = R.claim(rid, "s1")
+            R.finish(rid, "s1", nonce, status)
+            with patch.object(C, "deny_exit", side_effect=RuntimeError) as deny:
+                with self.assertRaises(RuntimeError):
+                    CX.decide_mcp(self.verdict, "Bash", args, str(self.tmp), "s1", "t1", True)
+            message = deny.call_args.args[0]
+            self.assertIn(status, message)
+            self.assertEqual("codex -a" in message, status != "denied")
+            self.assertEqual(R.details(rid, "s1")["status"], status)
+
+    async def test_unrelated_mcp_error_does_not_claim_forms_are_unavailable(self):
+        rid, _ = self.pending()
+        client = self.client([])
+        async def broken(*args, **kwargs):
+            raise self.M.MCPError(-32603, "Inert internal error")
+        client.request_context.session.elicit_form = broken
+        with self.assertRaises(self.M.MCPError):
+            await self.M.request_review(rid, client)
+        self.assertEqual(R.details(rid, "s1")["status"], "cancelled")
 
     async def test_more_information_needs_another_client_decision(self):
         rid, _ = self.pending()
@@ -481,6 +592,10 @@ class ApprovalTests(StateFixture, unittest.IsolatedAsyncioTestCase):
             result = await self.M.request_review(rid, client)
         self.assertEqual(result["status"], "timed-out")
         self.assertFalse(result["approved"])
+        with patch.object(self.M.asyncio, "timeout", side_effect=lambda _: real_timeout(0.01)):
+            setup = await self.M.check_review_support(client)
+        self.assertEqual(setup["status"], "timed-out")
+        self.assertFalse(setup["review_ready"])
 
 
 if __name__ == "__main__":

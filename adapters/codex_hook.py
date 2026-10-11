@@ -206,7 +206,9 @@ def decide_mcp(v, tool, args, cwd, sid, turn_id, cwd_known):
                "decision": "approved-once", "request_id": rid})
         return
     if status != "pending":
-        C.deny_exit(f"{reason}. Review {rid} is {status}. Stop; do not repeat the request or work around it.")
+        help_text = R.outcome_message(status) if status in ("client-declined", "review-unavailable") else ""
+        C.deny_exit(f"{reason}. Review {rid} is {status}. Stop. Do not repeat the request or work around it. "
+                    + help_text)
     C.deny_exit(f"{reason}. Review ID: {rid}. Call the agent_gate MCP request_review tool with "
                 f"request_id={rid} to ask the user in this session. Retry unchanged only after that tool "
                 "confirms approval. Chat text is not a grant. If the tool is unavailable, stop.")

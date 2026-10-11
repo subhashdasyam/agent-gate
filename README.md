@@ -68,6 +68,10 @@ Use `/hooks` in Codex to examine and trust the hook definition.
 Installation alone does not establish hook trust.
 
 Keep Code Mode enabled. No disable flags are necessary.
+After runtime setup, ask Agent Gate to call `check_review_support` once in Codex.
+This form check runs no command and creates no grant.
+If no form appears, refer to [Codex review forms](docs/integrations.md#codex-review-forms).
+
 The execution guard checks the actual directory before the original command runs.
 Linux and macOS use Bash. Native Windows uses PowerShell with conservative policy checks.
 Refer to [the execution guard](docs/execution-guard.md) for scope and validation limits.
