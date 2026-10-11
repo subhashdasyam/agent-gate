@@ -40,7 +40,6 @@ STATE_DIR = os.path.normpath(os.environ.get("GATE_STATE_DIR") or os.path.join(
 DEADLINE_S = float(os.environ.get("GATE_DEADLINE_S", "8"))
 APPROVAL_TTL_S = 15 * 60
 SEV = {"run": 0, "log": 1, "review": 2, "block": 3}
-SELF_APPROVAL_RE = re.compile(r"gate[_-]approve|agent-gate", re.I)
 
 try:
     import fcntl  # POSIX advisory locks; on Windows we run unlocked

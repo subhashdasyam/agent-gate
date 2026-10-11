@@ -25,6 +25,7 @@ workspace, so the session cwd is used.
 """
 import json
 import os
+import re
 import stat
 import sys
 
@@ -130,7 +131,7 @@ def handle(p):
     bind_tool = tool
     actual_args = ti if tool == "apply_patch" else None
     cwd_known = True
-    if C.SELF_APPROVAL_RE.search(payload) or C.STATE_DIR in payload:
+    if C.STATE_DIR in payload:
         v = {"decision": "block", "why": ["gate_tamper"],
              "detail": {"gate_tamper": "agents may not touch agent-gate approvals/state"}}
         run_cwd = cwd
@@ -170,6 +171,14 @@ def handle(p):
     else:
         return
     v = L.advise(v, "codex", sid, tool, actual_args or ti, run_cwd, root, mode, cwd_known)
+    if v["decision"] == "review" and actual_args is None and re.fullmatch(
+            r"exec-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", p.get("tool_use_id") or ""):
+        C.log({"harness": "codex", "session": sid, "tool": tool, "decision": "review",
+               "why": ["missing_call_context"], "context_source": "code_mode"})
+        C.deny_exit("agent-gate review: Codex code-mode shell calls do not expose full arguments or a transcript-linked call ID. "
+                    "No exact-action grant is possible. Start a new Codex session with "
+                    "`--disable code_mode --disable code_mode_only` to use direct tools. "
+                    "Do not retry through another shell or bypass the gate.")
     if os.environ.get("GATE_APPROVAL_TRANSPORT") == "terminal":
         decide(v, tool, payload, run_cwd, bind_cwd, sid, mode, why_mode)
     else:

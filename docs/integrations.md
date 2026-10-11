@@ -6,7 +6,7 @@ The earlier checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21
 The new Codex MCP checks used `0.162.1` on Linux.
 Git is necessary for installation from a Git repository.
 
-Earlier native plugin files are available in GitHub. Version `0.2.0` is local branch work until it is pushed.
+Earlier native plugin files are available in GitHub. Version `0.2.1` is local branch work until it is pushed.
 The local manager tests used temporary profiles and a local checkout.
 Those tests did not use a fresh GitHub installation.
 Do not install both a native plugin and manual hooks for the same host.
@@ -217,6 +217,37 @@ The exact action can run once within 15 minutes after creation, after policy is 
 A missing approval interface means stop. An automatic reviewer cannot issue this grant.
 See [the complete grant workflow and data limits](context-and-approvals.md#who-creates-and-checks-a-codex-grant).
 
+### Codex code-mode limit
+
+Codex `0.162.1` does not supply complete nested shell arguments to `PreToolUse` in code mode.
+The hook receives the command and a random nested-call ID.
+The transcript records the outer JavaScript call with a different ID.
+The gate cannot prove which full arguments belong to that nested call.
+
+An exact-action grant needs the actual directory, tool, and complete arguments.
+The gate does not evaluate JavaScript or match another call by command text.
+Code-mode actions that need review stop without a request ID or grant.
+Harmless commands can still pass. Policy blocks still apply.
+Laya cannot supply the missing host metadata or create a grant.
+
+For in-session approvals, start a new Codex session with direct tools:
+
+```bash
+codex --disable code_mode --disable code_mode_only
+```
+
+Keep the plugin, trusted hooks, and Codex sandbox active.
+Do not change tools or alter the command after a denial in the current session.
+Only the operator must select the direct-tool launch mode.
+
+The direct-tool checks used exact transcript IDs and native MCP forms.
+The code-mode check permitted `pwd` and denied a local network fixture without a grant.
+The experimental `executed_tool_call_metadata` feature did not supply the required metadata before the hook.
+
+Complete code-mode support needs a Codex hook contract with resolved nested arguments and the actual execution directory.
+The contract must also identify the nested tool and relate its ID to the parent call.
+The gate must examine that contract before it permits code-mode grants.
+
 ### Legacy operator-terminal approvals
 
 This section applies to Claude no-prompt fallback and Codex with `GATE_APPROVAL_TRANSPORT=terminal`.
@@ -320,7 +351,7 @@ It has no complete approval interface. Use the native plugin for new installatio
 | File | Contract |
 |---|---|
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | Claude plugin manifest and `hooks/claude.json` reference. |
-| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.0`. |
+| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.1`. |
 | [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) | Codex plugin manifest and `hooks/codex.json` reference. |
 | [`hooks/claude.json`](../hooks/claude.json) | `PreToolUse`, `CwdChanged`, and optional user-origin prompt capture. |
 | [`hooks/codex.json`](../hooks/codex.json) | `PreToolUse` for `Bash` and `apply_patch`. |

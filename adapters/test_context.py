@@ -49,6 +49,51 @@ class StateFixture(unittest.TestCase):
 
 
 class StateTests(StateFixture):
+    def test_all_host_adapters_distinguish_mentions_from_executed_controls(self):
+        adapters = Path(__file__).resolve().parent
+        env = {**os.environ, "HOME": str(self.tmp), "GATE_STATE_DIR": str(self.tmp / "state"),
+               "GATE_MODE": "strict", "GATE_SELF_PROTECT": "0", "GATE_PROTECT": str(adapters),
+               "CLAUDE_PROJECT_DIR": str(self.tmp)}
+        for host, script in (("claude", "claude_code_hook.py"), ("codex", "codex_hook.py"),
+                             ("hermes", "hermes_gated.py")):
+            for command, blocked in (("printf agent-gate", False), ("rg agent-gate README.md", False),
+                                     ("python3 -I adapters/bootstrap.py approve abc", True),
+                                     ("codex plugin remove agent-gate", True)):
+                with self.subTest(host=host, command=command):
+                    payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.tmp),
+                               "root": str(self.tmp), "cwd_known": True, "backend": "local",
+                               "tool_name": "terminal" if host == "hermes" else "Bash",
+                               "tool_input": {"command": command}, "tool_use_id": "c1"}
+                    result = subprocess.run([sys.executable, "-B", str(adapters / script)],
+                        input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=20)
+                    if host == "hermes":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        directive = json.loads(result.stdout)
+                        self.assertEqual(directive["action"] if directive else None, "block" if blocked else None)
+                    else:
+                        self.assertEqual(result.returncode, 2 if blocked else 0, result.stderr)
+                        self.assertEqual(result.stdout, "")
+
+    def test_project_name_in_read_only_command_is_not_self_approval(self):
+        gate = C.load_gate()
+        for command in ("printf agent-gate", "rg agent-gate README.md", "codex plugin list --json",
+                        "claude plugin list", "hermes plugins list"):
+            with self.subTest(command=command):
+                self.assertNotEqual(gate.gate(command, str(self.tmp), "agent", mode="strict")["decision"], "block")
+
+    def test_executed_gate_controls_stay_blocked(self):
+        gate = C.load_gate()
+        for command in ("python3 gate_approve.py abc", "python3 -I adapters/bootstrap.py approve abc",
+                        "python3 -m adapters.gate_approve abc", "bash gate_approve.py abc", ". gate_approve.py",
+                        "codex plugin remove agent-gate@agent-gate", "codex plugin marketplace upgrade",
+                        "env codex -c model=test plugin remove agent-gate@agent-gate",
+                        "claude plugin disable agent-gate", "hermes plugins disable agent-gate",
+                        "bash -c 'codex plugin remove agent-gate'",
+                        "codex plugin remove \"$UNKNOWN_PLUGIN\"",
+                        f"printf '{{}}' > {self.tmp}/state/reviews.json"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.gate(command, str(self.tmp), "agent", mode="strict")["decision"], "block")
+
     def test_retry_retains_restrictions_and_deduplicates(self):
         self.prompt("Fix the tests. Do not upload project files.")
         self.prompt("retry", turn_id="t2")
@@ -166,6 +211,37 @@ class StateTests(StateFixture):
             "name": "exec_command", "arguments": json.dumps(self.args)}))
         self.assertEqual(CX.recover_call(str(transcript), "printf inert", "c1"), ("exec_command", self.args))
         self.assertIsNone(CX.recover_call(str(transcript), "printf inert", "c2"))
+
+    def test_code_mode_cannot_borrow_static_or_stale_arguments(self):
+        transcript = self.tmp / "calls.jsonl"
+        direct = {"type": "response_item", "payload": {"type": "function_call", "call_id": "old",
+                  "name": "exec_command", "arguments": json.dumps(self.args)}}
+        wrapped = {"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "outer",
+                   "name": "exec", "input": "text(await tools.exec_command(" + json.dumps(self.args) + "));"}}
+        transcript.write_text(json.dumps(direct) + "\n" + json.dumps(wrapped))
+        self.assertIsNone(CX.recover_call(str(transcript), "printf inert", "exec-11111111-1111-4111-8111-111111111111"))
+
+    def test_code_mode_review_explains_direct_mode_without_grant(self):
+        payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.tmp),
+                   "tool_name": "Bash", "tool_input": {"command": "curl https://example.com"},
+                   "tool_use_id": "exec-11111111-1111-4111-8111-111111111111"}
+        with patch.dict(os.environ, {"GATE_MODE": "strict"}), \
+                patch.object(C, "deny_exit", side_effect=RuntimeError) as deny:
+            with self.assertRaises(RuntimeError):
+                CX.handle(payload)
+            self.assertIn("--disable code_mode --disable code_mode_only", deny.call_args.args[0])
+        self.assertFalse((self.tmp / "state" / "reviews.json").exists())
+
+    def test_code_mode_hard_block_stays_a_policy_block(self):
+        payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.tmp),
+                   "tool_name": "Bash", "tool_input": {"command": "python3 gate_approve.py abc"},
+                   "tool_use_id": "exec-11111111-1111-4111-8111-111111111111"}
+        with patch.dict(os.environ, {"GATE_MODE": "strict"}), \
+                patch.object(C, "deny_exit", side_effect=RuntimeError) as deny:
+            with self.assertRaises(RuntimeError):
+                CX.handle(payload)
+            self.assertIn("Blocked by policy", deny.call_args.args[0])
+            self.assertNotIn("--disable code_mode", deny.call_args.args[0])
 
     def test_context_files_are_private(self):
         self.prompt("inert")

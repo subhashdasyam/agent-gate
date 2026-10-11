@@ -8,7 +8,7 @@ These pages describe the current source and the planned work.
 
 The source directory uses the name `gate-v2.2`.
 The public repository uses the name `agent-gate`.
-The native plugin version in this branch is `0.2.0`.
+The native plugin version in this branch is `0.2.1`.
 
 The original use case was the ProjectDiscovery threat: a keyword-triggered model backdoor that transfers `.env` data through download-and-execute code.
 The gate examines the tool action rather than the model's explanation.

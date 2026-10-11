@@ -80,7 +80,7 @@ def cli_probe(folder, env, model_logs):
         os.close(master)
 
 
-def probe(python, reply, cli=False, plugin=False, flow=False):
+def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
     responses = list(reply) if isinstance(reply, list) else [reply]
     final_reply = responses[-1]
     with tempfile.TemporaryDirectory(prefix="gate-elicitation-") as folder:
@@ -99,6 +99,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
             f'model = "gpt-mock"\nmodel_provider = "mock"\n'
             f'model_catalog_json = {json.dumps(str(home / "catalog.json"))}\n'
             '[features]\nhooks = true\n'
+            + ('code_mode = true\ncode_mode_only = true\n' if code_mode else 'code_mode = false\ncode_mode_only = false\n') +
             '[model_providers.mock]\nname = "mock"\nwire_api = "responses"\n'
             f'base_url = "http://127.0.0.1:{port}/v1"\nenv_key = "MOCK_API_KEY"\n'
             + ('' if plugin else '[mcp_servers.gate_fixture]\n'
@@ -108,6 +109,17 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
         env.update(CODEX_HOME=folder, MOCK_API_KEY="inert-test", NO_PROXY="127.0.0.1",
                    no_proxy="127.0.0.1")
         env.update(GATE_STATE_DIR=str(home / "gate-state"), GATE_LAYA_URL="", GATE_MODE="strict")
+        if code_mode:
+            # Record only inert test inputs in this disposable profile to verify the nested-call contract.
+            recorder = home / "capture.py"
+            recorder.write_text('import json,sys\np=json.load(sys.stdin)\n'
+                'p={k:p[k] for k in ("tool_name","tool_input","tool_use_id")}\n'
+                f'with open({str(home / "captured-hooks.jsonl")!r},"a") as f: f.write(json.dumps(p)+"\\n")\n',
+                encoding="utf-8")
+            with (home / "config.toml").open("a") as config:
+                config.write('\n[[hooks.PreToolUse]]\nmatcher = "Bash"\n'
+                    '[[hooks.PreToolUse.hooks]]\ntype = "command"\n'
+                    f'command = {json.dumps(python + " " + str(recorder))}\n')
         env["RUST_LOG"] = "codex_hooks=debug,codex_core::hooks=debug,codex_rmcp_client=info"
         if plugin:
             subprocess.run(["codex", "plugin", "marketplace", "add", str(HERE.parent)],
@@ -149,7 +161,8 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
                 if predicate(message):
                     return message
             raise RuntimeError("Codex probe timed out: " + "".join(errors)[-1500:]
-                               + json.dumps(model_logs[-3:]))
+                               + json.dumps(model_logs[-3:])
+                               + ((home / "captured-hooks.jsonl").read_text() if code_mode else ''))
 
         elicitations = []
         try:
@@ -163,7 +176,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
                 hooks = receive(lambda m: m.get("id") == 5)
                 assert "result" in hooks, hooks
                 rows = hooks["result"]["data"][0]["hooks"]
-                assert len(rows) == 3, hooks
+                assert len(rows) == (4 if code_mode else 3), hooks
                 # Scripted trust affects only this disposable test profile, never the real user's hooks.
                 send({"id": 6, "method": "config/batchWrite", "params": {
                     "edits": [{"keyPath": "hooks.state", "mergeStrategy": "upsert",
@@ -214,17 +227,37 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
                             rows = json.loads(path.read_text())
                             assert len(rows) == 1, rows
                             request_args["request_id"] = next(iter(rows))
-                        return {"steps": [action, {"function": function, "arguments": request_args},
-                                          action, action]}
+                        steps = [{"cmd": "pwd", "workdir": folder}, action] if code_mode else [
+                            action, {"function": function, "arguments": request_args}, action, action]
+                        if code_mode:
+                            steps = [{"code": "text(await tools." + step.get("function", "exec_command")
+                                      + "(" + json.dumps(step.get("arguments", step)) + "));"} for step in steps]
+                        return {"steps": steps}
 
                     mock.scenario = steps
             send({"id": 3, "method": "turn/start", "params": {
                 "threadId": tid, "input": [{"type": "text", "text": "Run the inert review fixture."}]}})
             result = receive(lambda m: m.get("method") == "turn/completed")
             assert result["params"]["turn"]["status"] == "completed", result
+            if code_mode:
+                captured = [json.loads(line) for line in (home / "captured-hooks.jsonl").read_text().splitlines()]
+                effects = sum(entry.get("GET") == "/fixture" for entry in model_logs)
+                outputs = json.dumps([entry for entry in model_logs if "codex_tool_result" in entry])
+                tool_results = [entry for entry in model_logs if "codex_tool_result" in entry]
+                first_output = tool_results[0]["codex_tool_result"][-1]["output"]
+                benign = json.loads(next(block["text"] for block in first_output if block["text"].startswith("{")))
+                assert len(captured) == 2 and captured[0]["tool_input"]["command"] == "pwd", captured
+                assert benign["exit_code"] == 0 and benign["output"].strip() == folder, benign
+                assert all(row["tool_name"] == "Bash" and row["tool_use_id"].startswith("exec-")
+                           and set(row["tool_input"]) == {"command"} for row in captured), captured
+                assert "Codex code-mode" in outputs and "--disable code_mode" in outputs, outputs
+                assert effects == 0 and not elicitations and not (home / "gate-state" / "reviews.json").exists()
+                return {"code_mode": True, "benign_command_allowed": True, "review_denied_without_grant": True,
+                        "elicitation_count": 0, "network_effects": effects, "resolved_nested_arguments_available": False}
             assert len(elicitations) == (len(reply) if isinstance(reply, list) else 1), (elicitations, model_logs[-15:], errors[-30:],
                 [str(path.relative_to(home)) for path in (home / "gate-state").rglob("*")],
-                trusted if flow else None)
+                trusted if flow else None,
+                (home / "captured-hooks.jsonl").read_text() if code_mode else None)
             request = elicitations[0]
             assert request["threadId"] == tid, request
             assert request["requestedSchema"].get("properties", {}).get("decision", {}).get("enum") == [
@@ -254,7 +287,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False):
                 assert parsed["client_meta"]["sessionId"] == tid, parsed
             return {"reply": reply, "elicitation_count": len(elicitations),
                     "thread_bound": True, "schema_choices": 3, "bundled_plugin": plugin,
-                    "hook_round_trip": flow, "network_effects": effects if flow else 0}
+                    "hook_round_trip": flow, "code_mode": code_mode, "network_effects": effects if flow else 0}
         finally:
             p.terminate()
             try:
@@ -272,6 +305,7 @@ def main():
     parser.add_argument("--cli", action="store_true", help="Also exercise the real CLI form UI.")
     parser.add_argument("--plugin", action="store_true", help="Also load the real bundled server in a fresh home.")
     parser.add_argument("--flow", action="store_true", help="Inert localhost action: deny, client review, retry, deny reuse.")
+    parser.add_argument("--code-mode", action="store_true", help="Also test the hook flow through nested JavaScript calls.")
     args = parser.parse_args()
     print(subprocess.check_output(["codex", "--version"], text=True).strip())
     for reply in ({"action": "accept", "content": {"decision": "Approve"}},
@@ -294,6 +328,8 @@ def main():
                       {"action": "accept", "content": {"decision": "Deny"}},
                       {"action": "cancel", "content": None}):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True)), flush=True)
+    if args.code_mode:
+        print(json.dumps(probe(args.mcp_python, None, plugin=True, flow=True, code_mode=True)), flush=True)
 
 
 if __name__ == "__main__":

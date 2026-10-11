@@ -775,6 +775,30 @@ def _stdin_program(c):
     return None, None
 
 
+def _gate_control(name, args):
+    """Recognize executed gate controls, not a project name in ordinary data."""
+    if name in {"gate_approve", "gate-approve", "gate_approve.py"}:
+        return True
+    if name == "agent-gate":
+        return args[:1] not in (["--help"], ["--version"])
+    if name not in {"codex", "claude", "hermes"}:
+        return False
+    takes = {"-c", "--config", "-p", "--profile", "-m", "--model", "--settings"}
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in takes else 1
+    args = args[i:]
+    if args[:1] != (["plugins"] if name == "hermes" else ["plugin"]):
+        return False
+    args = args[1:]
+    if args[:1] == ["marketplace"]:
+        args = args[1:]
+    if not args or args[0] not in {"add", "install", "enable", "disable", "remove", "uninstall", "update", "upgrade"}:
+        return False
+    targets = args[1:]
+    return not targets or any(not a or "agent-gate" in a.lower() for a in targets)
+
+
 def _one(c, facts, home, depth):
     argv, cwd_override, _ = unwrap(list(c.argv), facts, c.cwd)
     cwd = c.cwd
@@ -819,6 +843,8 @@ def _one(c, facts, home, depth):
             if is_secret_text(alt, w.glob):
                 facts.set("secrets", alt.replace(DYN, "?"))
     lits = [_lit(w) or "" for w in args]
+    if _gate_control(name, lits):
+        facts.set("gate_tamper", "executes a gate approval or changes gate installation")
 
     # --- nested shell code: sh -c, eval, source, interpreters ---------------
     if name in SHELLS:
@@ -848,6 +874,8 @@ def _one(c, facts, home, depth):
             return
         if pos and "s" not in flags:
             target = pos[0]
+            if target.lit is not None and _gate_control(os.path.basename(target.lit), []):
+                facts.set("gate_tamper", "executes the operator approval tool")
             if target.procsub:
                 facts.set("pipe_exec", f"{name} <(...)")
             elif target.lit is None:
@@ -866,6 +894,8 @@ def _one(c, facts, home, depth):
             facts.exec_paths.append(resolve(prog.lit, cwd)[0] if prog.lit else None)
         return
     if name in ("source", "."):
+        if args and args[0].lit is not None and _gate_control(os.path.basename(args[0].lit), []):
+            facts.set("gate_tamper", "executes the operator approval tool")
         if args and args[0].procsub:
             facts.set("pipe_exec", f"{name} <(...)")
         elif args and args[0].lit is not None and _is_fd_path(resolve(args[0].lit, cwd)[0]):
@@ -907,6 +937,8 @@ def _one(c, facts, home, depth):
             if name == "python" and (a == "-m" or (a.startswith("-m") and len(a) > 2)):
                 mod = a[2:] if len(a) > 2 else (lits[i + 1] if i + 1 < len(args) else "")
                 rest = args[i + (1 if len(a) > 2 else 2):]
+                if mod.rsplit(".", 1)[-1] == "gate_approve":
+                    facts.set("gate_tamper", "executes the operator approval module")
                 if mod == "pip":
                     if rest and _lit(rest[0]) in INSTALL_SUBS:
                         _installer("pip", rest[1:], facts, cwd)
@@ -921,6 +953,10 @@ def _one(c, facts, home, depth):
                 i += 1; continue
             break
         script = args[i] if i < len(args) else None
+        if script is not None and script.lit is not None:
+            if _gate_control(os.path.basename(script.lit), lits[i + 1:]) or \
+                    (script.lit.replace("\\", "/").endswith("adapters/bootstrap.py") and lits[i + 1:i + 2] == ["approve"]):
+                facts.set("gate_tamper", "executes the operator approval tool")
         if name == "deno" and script is not None and script.lit == "run":
             script = next((w for w in args[i + 1:] if not (_lit(w) or "-").startswith("-")), None)
         if script is None or script.lit == "-":

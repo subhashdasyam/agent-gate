@@ -125,13 +125,9 @@ def pre_tool_use(p):
             if not isinstance(cmd, str) or not cmd.strip():
                 return
             payload = json.dumps(ti, sort_keys=True)   # binds dangerouslyDisableSandbox too
-            if C.SELF_APPROVAL_RE.search(cmd):
-                v = {"decision": "block", "why": ["gate_tamper"],
-                     "detail": {"gate_tamper": "agents may not touch agent-gate approvals/state"}}
-            else:
-                mode, why_mode = C.claude_mode(project, ti, cmd)
-                v = G.gate(cmd, cwd, _origin(cmd, st, p), agent="claude", mode=mode,
-                           state=st, root=project, cwd_known=cwd_known)
+            mode, why_mode = C.claude_mode(project, ti, cmd)
+            v = G.gate(cmd, cwd, _origin(cmd, st, p), agent="claude", mode=mode,
+                       state=st, root=project, cwd_known=cwd_known)
         elif tool == "PowerShell":
             payload = str(ti.get("command"))
             v = {"decision": "review", "why": ["degraded"],

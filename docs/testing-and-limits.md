@@ -5,6 +5,15 @@ They do not prove that every dangerous action will get review.
 
 ### Current branch check: 2026-10-11
 
+The first hook-flow checks below used direct tools, not code mode.
+A later live session found a code-mode compatibility failure.
+The nested shell hook supplied only the command and a random ID that did not match the outer transcript call.
+No exact-action grant was possible. The denial prevented tool execution.
+
+Version `0.2.1` gives a code-mode denial with the direct-tool launch procedure.
+It also replaces the raw project-name tamper filter with shell-parser checks of executed controls.
+The additional checks cover read-only mentions, approval tools, gate installation changes, and code-mode grant refusal.
+
 The `feat/context-aware-approvals` branch adds context hooks, exact Codex grants, and optional Laya advice.
 Checks used Linux, Python 3.12, the pinned parser runtime, and MCP `2.0.0`.
 The original source snapshot and real host configuration were not changed.
@@ -15,12 +24,13 @@ The model service was not contacted, started, or trained.
 |---|---|
 | Core and adapter regressions | 54 core checks and 128 adapter checks passed. |
 | Parser corpus | 318/318 attack probes caught. Clean reviews: 0/87 normal, 2/87 strict. |
-| Plugin and context tests | 22 plugin tests and 32 context, grant, and model tests passed. Includes real local HTTP and slow-body deadline checks. |
+| Plugin and context tests | 22 plugin tests and 38 context, grant, and model tests passed. Includes real local HTTP, slow-body deadlines, and all 3 host adapters' project-name checks. |
 | Codex `0.162.1` form protocol | Approve, Deny, More information, decline, and cancel passed with an inert MCP fixture. |
 | Codex CLI UI | The real CLI displayed all 3 choices. A scripted Enter key selected Approve in the inert fixture. |
 | Fresh local plugin | A disposable profile loaded the bundled server without manual MCP registration. Approve, Deny, Cancel, and More information with final approval passed. |
 | Native host validation | Claude marketplace validation passed with the known catalog-policy warning. Hermes validation and doctor found all 3 registered hooks. |
 | Codex complete hook flow | Deny, bundled review, exact retry, and denial of reuse passed. Approval caused one localhost request. Deny and Cancel caused none. |
+| Codex code-mode hook flow | `pwd` passed. A reviewed network call was denied with the direct-tool launch procedure. No grant, form, or network effect occurred. Full nested arguments were unavailable. |
 | Benchmark and pilot tools | 6 benchmark tests and 6 pilot tests passed. No generated results or model training artifacts were added. |
 
 These tests used a scripted model and scripted client responses, not real human consent.
@@ -44,6 +54,8 @@ The server rejects missing or mismatched metadata and automatic reviewers.
 This check did not repeat real-human Claude or Hermes approvals, the full historical attack matrix, or fresh GitHub installation.
 It did not establish Laya accuracy, production latency, complete secret redaction, or an OS isolation boundary.
 Windows and macOS were not tested. Exact Codex MCP grants currently require POSIX locks.
+Native Claude and Hermes registration checks and benchmark tests in the table are from the initial branch check.
+The `0.2.1` follow-up repeated core, corpus, adapter, plugin, context, and Codex compatibility checks.
 
 ### Previous local check: 2026-10-10
 
@@ -149,11 +161,13 @@ The inert Codex compatibility test uses an installed Codex CLI and a local mock 
 It tests forms, a fresh plugin profile, and an exact-action retry:
 
 ```bash
-python3 e2e/check_elicitation.py --mcp-python "$GATE_TEST_PYTHON" --plugin --cli --flow
+python3 e2e/check_elicitation.py --mcp-python "$GATE_TEST_PYTHON" --plugin --cli --flow --code-mode
 ```
 
 It creates disposable profiles and makes no model API request.
 Client responses and test-profile hook trust are scripted. They are not human consent.
+The direct-tool profile explicitly disables code mode.
+The code-mode profile checks a harmless command and denial without a grant, not a successful approval.
 
 Install `requirements.txt` in a development virtual environment for full-parser tests.
 The adapter and plugin tests use local fixtures and terminal simulations.

@@ -39,6 +39,8 @@ A one-time approval permits only an exact retry through the gate.
 - [x] Bundle a Codex stdio MCP server with client-session checks and native approval forms.
 - [x] Bind Codex grants to all arguments, the actual tool, directory, and session. Apply expiry and atomic single-use consumption.
 - [x] Keep Claude and Hermes native approvals. Keep legacy terminal approval as an explicit Codex option.
+- [x] Explain the Codex code-mode limit and provide a direct-tool launch procedure.
+- [ ] Use a verified Codex hook contract with complete nested arguments, execution directory, and parent-call identity for code-mode grants.
 - [ ] Add broader real-human UI tests, client-version coverage, and state-maintenance procedures.
 - [ ] Design bounded task grants with explicit user scope and resource limits. Natural-language task text is not a grant.
 

@@ -65,6 +65,9 @@ codex plugin add agent-gate@agent-gate
 
 Use `/hooks` in Codex to examine and trust the hook definition.
 Installation alone does not establish hook trust.
+Codex exact-action approvals require direct tools in this version.
+Start Codex with `--disable code_mode --disable code_mode_only`.
+See [the code-mode limit](docs/integrations.md#codex-code-mode-limit).
 
 ### Hermes
 

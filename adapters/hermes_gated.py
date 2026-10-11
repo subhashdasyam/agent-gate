@@ -88,9 +88,6 @@ def handle(p):
         cmd = ti.get("command")
         if not isinstance(cmd, str) or not cmd.strip():
             v = _review("Missing terminal command.")
-        elif C.SELF_APPROVAL_RE.search(cmd):
-            v = {"decision": "block", "why": ["gate_tamper"],
-                 "detail": {"gate_tamper": "Agents cannot change gate approvals or runtime files."}}
         else:
             workdir = ti.get("workdir")
             if workdir is not None and (not isinstance(workdir, str) or not os.path.isabs(workdir)):

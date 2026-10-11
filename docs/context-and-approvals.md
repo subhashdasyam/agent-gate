@@ -87,6 +87,10 @@ It does not trust another call with the same command text.
 Missing full arguments or an unknown directory stop exact-action approval.
 Transcript format is a host dependency, not a stable public schema.
 
+Code-mode shell calls lack the required transcript-linked ID in Codex `0.162.1`.
+They cannot receive exact-action grants in this version.
+See [the direct-tool launch procedure and code-mode limit](integrations.md#codex-code-mode-limit).
+
 Requests expire 15 minutes after creation. A retry does not extend the deadline.
 The form has a 45-second total response deadline.
 More information opens one final form with grant scope and expiry details.
@@ -101,6 +105,10 @@ It has no automatic cleanup. A trusted operator must maintain a full store outsi
 
 POSIX file locks prevent concurrent grant use. Windows exact-action MCP grants are not supported in this version.
 Corrupt review JSON causes a denial. The file stays unchanged.
+
+The shared shell parser recognizes executed approval tools and changes to the gate installation.
+An ordinary text argument that contains `agent-gate` does not count as a gate change.
+Protected code, runtime, and state paths keep the same access restrictions.
 
 ## Native host approvals
 

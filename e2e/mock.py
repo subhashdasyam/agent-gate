@@ -150,6 +150,13 @@ class H(BaseHTTPRequestHandler):
         if done or not names or ("function" in sc and sc["function"] not in names):
             item = {"type": "message", "role": "assistant", "id": "msg_1", "status": "completed",
                     "content": [{"type": "output_text", "text": "done", "annotations": []}]}
+        elif "code" in sc:
+            code_tool = next((n for n in names if n == "exec" or n.endswith("__exec")), None)
+            assert code_tool is not None, names
+            item = {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_1",
+                    "name": code_tool, "input": sc["code"], "status": "completed"}
+            if code_tool in functions:
+                item["namespace"], item["name"] = functions[code_tool]
         elif "patch" in sc and "apply_patch" in names:
             item = {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_1", "name": "apply_patch",
                     "input": sc["patch"], "status": "completed"}
