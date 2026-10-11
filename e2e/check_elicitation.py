@@ -85,6 +85,10 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
     final_reply = responses[-1]
     with tempfile.TemporaryDirectory(prefix="gate-elicitation-") as folder:
         home = Path(folder)
+        project = home / "project" if code_mode else home
+        project.mkdir(exist_ok=True)
+        target = project / "actual workdir" if code_mode else project
+        target.mkdir(exist_ok=True)
         server = ThreadingHTTPServer(("127.0.0.1", 0), mock.H)
         request_args = {}
         mock.scenario = lambda: {"function": "mcp__gate_fixture__request_review", "arguments": request_args}
@@ -187,8 +191,8 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 trusted = receive(lambda m: m.get("id") == 7)
                 assert all(row["trustStatus"] == "trusted" for row in trusted["result"]["data"][0]["hooks"]), trusted
             send({"id": 2, "method": "thread/start", "params": {
-                "cwd": folder, "approvalPolicy": "on-request",
-                "sandbox": "danger-full-access" if flow else "read-only",
+                "cwd": str(project), "approvalPolicy": "on-request",
+                "sandbox": "workspace-write" if code_mode else "danger-full-access" if flow else "read-only",
                 "approvalsReviewer": "user", "ephemeral": not flow}})
             started = receive(lambda m: m.get("id") == 2)
             assert "result" in started, started
@@ -220,6 +224,9 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                     # The policy sees an external hostname; curl pins it to our inert loopback server.
                     action = {"cmd": f"curl --noproxy '*' --resolve fixture.invalid:{port}:127.0.0.1 "
                                      f"--max-time 2 http://fixture.invalid:{port}/fixture", "workdir": folder}
+                    if code_mode:
+                        action = {"cmd": "python3 -c 'from pathlib import Path; Path(\"guard-proof\").write_text(\"inert\")'",
+                                  "workdir": str(target), "login": False}
 
                     def steps():
                         path = home / "gate-state" / "reviews.json"
@@ -227,7 +234,9 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                             rows = json.loads(path.read_text())
                             assert len(rows) == 1, rows
                             request_args["request_id"] = next(iter(rows))
-                        steps = [{"cmd": "pwd", "workdir": folder}, action] if code_mode else [
+                        steps = [{"cmd": "pwd", "workdir": str(target), "login": False},
+                                 {"cmd": "pwd", "workdir": str(target), "login": False},
+                                 action, {"function": function, "arguments": request_args}, action, action] if code_mode else [
                             action, {"function": function, "arguments": request_args}, action, action]
                         if code_mode:
                             steps = [{"code": "text(await tools." + step.get("function", "exec_command")
@@ -244,16 +253,11 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 effects = sum(entry.get("GET") == "/fixture" for entry in model_logs)
                 outputs = json.dumps([entry for entry in model_logs if "codex_tool_result" in entry])
                 tool_results = [entry for entry in model_logs if "codex_tool_result" in entry]
-                first_output = tool_results[0]["codex_tool_result"][-1]["output"]
-                benign = json.loads(next(block["text"] for block in first_output if block["text"].startswith("{")))
-                assert len(captured) == 2 and captured[0]["tool_input"]["command"] == "pwd", captured
-                assert benign["exit_code"] == 0 and benign["output"].strip() == folder, benign
+                assert len(captured) == 5 and captured[0]["tool_input"]["command"] == "pwd", captured
                 assert all(row["tool_name"] == "Bash" and row["tool_use_id"].startswith("exec-")
                            and set(row["tool_input"]) == {"command"} for row in captured), captured
-                assert "Codex code-mode" in outputs and "--disable code_mode" in outputs, outputs
-                assert effects == 0 and not elicitations and not (home / "gate-state" / "reviews.json").exists()
-                return {"code_mode": True, "benign_command_allowed": True, "review_denied_without_grant": True,
-                        "elicitation_count": 0, "network_effects": effects, "resolved_nested_arguments_available": False}
+                assert str(target) in outputs and "--disable code_mode" not in outputs, outputs
+                assert (target / "guard-proof").exists() == (final_reply.get("content") == {"decision": "Approve"})
             assert len(elicitations) == (len(reply) if isinstance(reply, list) else 1), (elicitations, model_logs[-15:], errors[-30:],
                 [str(path.relative_to(home)) for path in (home / "gate-state").rglob("*")],
                 trusted if flow else None,
@@ -274,7 +278,8 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                     assert row["status"] == (("used" if flow else "approved") if final_reply.get("content") == {"decision": "Approve"}
                                              else "denied" if final_reply["action"] != "cancel" else "cancelled"), row
                     if flow:
-                        effects = sum(entry.get("GET") == "/fixture" for entry in model_logs)
+                        effects = int((target / "guard-proof").exists()) if code_mode else sum(
+                            entry.get("GET") == "/fixture" for entry in model_logs)
                         assert effects == int(row["status"] == "used"), (effects, row, model_logs)
                         import context as CT
                         assert CT.snapshot("codex", tid)["status"] == "present"
@@ -287,7 +292,9 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False):
                 assert parsed["client_meta"]["sessionId"] == tid, parsed
             return {"reply": reply, "elicitation_count": len(elicitations),
                     "thread_bound": True, "schema_choices": 3, "bundled_plugin": plugin,
-                    "hook_round_trip": flow, "code_mode": code_mode, "network_effects": effects if flow else 0}
+                    "hook_round_trip": flow, "code_mode": code_mode,
+                    "network_effects": effects if flow and not code_mode else 0,
+                    "file_effects": effects if flow and code_mode else 0}
         finally:
             p.terminate()
             try:
@@ -329,7 +336,10 @@ def main():
                       {"action": "cancel", "content": None}):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True)), flush=True)
     if args.code_mode:
-        print(json.dumps(probe(args.mcp_python, None, plugin=True, flow=True, code_mode=True)), flush=True)
+        for reply in ({"action": "accept", "content": {"decision": "Approve"}},
+                      {"action": "accept", "content": {"decision": "Deny"}},
+                      {"action": "cancel", "content": None}):
+            print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True, code_mode=True)), flush=True)
 
 
 if __name__ == "__main__":

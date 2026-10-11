@@ -3,7 +3,29 @@
 Test results describe particular inputs and environments.
 They do not prove that every dangerous action will get review.
 
-### Current branch check: 2026-10-11
+### Execution guard check: 2026-10-11
+
+Version `0.2.2` adds a guarded execution contract for Code Mode and native Windows.
+No Code Mode disable flags are necessary.
+The current local tests use Linux, Python 3.12, the pinned parser, MCP `2.0.0`, and Codex `0.162.1`.
+
+| Check | Result |
+|---|---|
+| Guard, context, and plugin regressions | 82 tests passed. Includes runtime facts, authenticated receipts, directory and environment mismatch, hard blocks, expiry, and reuse. |
+| Core, adapters, and parser corpus | 54 core checks and 128 adapter checks passed. The corpus caught 318/318 attack probes. Clean reviews: 0/87 normal, 2/87 strict. |
+| Process concurrency | Four independent processes raced one grant. Exactly one process consumed the grant. |
+| Real Code Mode approval | Both Code Mode options stayed enabled. A native form approval caused one inert file write in the actual tool directory. |
+| Real Code Mode Deny and Cancel | Both cases stopped the original command and created no file. |
+| Real Code Mode More information | The client received a second form. Final approval caused one inert file write. |
+| Sandbox retention | Code Mode used `workspace-write`. The actual tool directory differed from the session directory. Private state stayed outside the workspace. |
+| OS matrix | CI configuration covers Linux, macOS, and Windows with Python 3.11 and 3.12. Native macOS and Windows results remain unverified. |
+
+The client responses and hook trust were scripted in disposable profiles.
+No real host profile or model service changed.
+The guard scope differs from complete-argument grants. Refer to [the execution contract](execution-guard.md).
+These checks do not prove native Windows or macOS Codex sandbox behavior, real human consent, or protected production deployment.
+
+### Previous branch check: 2026-10-11, version 0.2.1
 
 The first hook-flow checks below used direct tools, not code mode.
 A later live session found a code-mode compatibility failure.
@@ -53,7 +75,7 @@ The server rejects missing or mismatched metadata and automatic reviewers.
 
 This check did not repeat real-human Claude or Hermes approvals, the full historical attack matrix, or fresh GitHub installation.
 It did not establish Laya accuracy, production latency, complete secret redaction, or an OS isolation boundary.
-Windows and macOS were not tested. Exact Codex MCP grants currently require POSIX locks.
+Windows and macOS were not tested in that version. Its exact Codex MCP grants required POSIX locks.
 Native Claude and Hermes registration checks and benchmark tests in the table are from the initial branch check.
 The `0.2.1` follow-up repeated core, corpus, adapter, plugin, context, and Codex compatibility checks.
 
@@ -167,7 +189,8 @@ python3 e2e/check_elicitation.py --mcp-python "$GATE_TEST_PYTHON" --plugin --cli
 It creates disposable profiles and makes no model API request.
 Client responses and test-profile hook trust are scripted. They are not human consent.
 The direct-tool profile explicitly disables code mode.
-The code-mode profile checks a harmless command and denial without a grant, not a successful approval.
+The Code Mode profile checks actual runtime facts, native approvals, guarded execution, and denial of grant reuse.
+The fixture writes only an inert file inside its temporary workspace.
 
 Install `requirements.txt` in a development virtual environment for full-parser tests.
 The adapter and plugin tests use local fixtures and terminal simulations.
@@ -215,7 +238,7 @@ It does not call a real model.
 - The legacy Hermes wrapper has no native approval interface. Its file writes now include embedded checks.
 - Another plugin can modify tool arguments after policy checks. Plugin order and host behavior are not an isolation boundary.
 - A native plugin does not automatically create an OS sandbox or establish Codex hook trust.
-- OS-specific deadlines and locks are not equivalent on every platform. Windows does not use the POSIX state lock.
+- State locks use platform-specific APIs. Native macOS and Windows host behavior still needs independent validation.
 
 **CAUTION: Keep `GATE_SELF_PROTECT` enabled in the installed gate.**
 Use `GATE_SELF_PROTECT=0` only during development.

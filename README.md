@@ -42,6 +42,7 @@ Laya stays off unless the operator configures an endpoint.
 ## Quick start
 
 Use Python 3.11 or later with `venv` and `pip`.
+Make sure that `python3` starts this Python installation on the host PATH.
 Git is necessary for installation from GitHub.
 Do not combine a native plugin with manual hooks for the same host.
 
@@ -65,9 +66,11 @@ codex plugin add agent-gate@agent-gate
 
 Use `/hooks` in Codex to examine and trust the hook definition.
 Installation alone does not establish hook trust.
-Codex exact-action approvals require direct tools in this version.
-Start Codex with `--disable code_mode --disable code_mode_only`.
-See [the code-mode limit](docs/integrations.md#codex-code-mode-limit).
+
+Keep Code Mode enabled. No disable flags are necessary.
+The execution guard checks the actual directory before the original command runs.
+Linux and macOS use Bash. Native Windows uses PowerShell with conservative policy checks.
+Refer to [the execution guard](docs/execution-guard.md) for scope and validation limits.
 
 ### Hermes
 

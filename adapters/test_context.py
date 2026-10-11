@@ -21,6 +21,7 @@ import context as CT
 import laya_client as L
 import reviews as R
 import codex_hook as CX
+import platform_support as P
 
 
 class StateFixture(unittest.TestCase):
@@ -186,7 +187,7 @@ class StateTests(StateFixture):
     def test_unknown_context_oversize_and_unlocked_state_refuse_grants(self):
         with self.assertRaises(ValueError):
             self.pending(args={"cmd": "x" * R.MAX_ACTION_BYTES})
-        with patch.object(C, "fcntl", None), self.assertRaises(RuntimeError):
+        with patch.object(P, "fcntl", None), patch.object(P, "msvcrt", None), self.assertRaises(RuntimeError):
             self.pending()
         with self.assertRaises(ValueError):
             R.pending("codex", "", str(self.tmp), "Bash", {}, self.verdict)
@@ -221,15 +222,13 @@ class StateTests(StateFixture):
         transcript.write_text(json.dumps(direct) + "\n" + json.dumps(wrapped))
         self.assertIsNone(CX.recover_call(str(transcript), "printf inert", "exec-11111111-1111-4111-8111-111111111111"))
 
-    def test_code_mode_review_explains_direct_mode_without_grant(self):
+    def test_code_mode_review_starts_guard_without_grant(self):
         payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.tmp),
                    "tool_name": "Bash", "tool_input": {"command": "curl https://example.com"},
                    "tool_use_id": "exec-11111111-1111-4111-8111-111111111111"}
-        with patch.dict(os.environ, {"GATE_MODE": "strict"}), \
-                patch.object(C, "deny_exit", side_effect=RuntimeError) as deny:
-            with self.assertRaises(RuntimeError):
-                CX.handle(payload)
-            self.assertIn("--disable code_mode --disable code_mode_only", deny.call_args.args[0])
+        with patch.dict(os.environ, {"GATE_MODE": "strict"}), patch.object(CX.D, "prepare") as prepare:
+            CX.handle(payload)
+            prepare.assert_called_once()
         self.assertFalse((self.tmp / "state" / "reviews.json").exists())
 
     def test_code_mode_hard_block_stays_a_policy_block(self):
@@ -244,6 +243,8 @@ class StateTests(StateFixture):
             self.assertNotIn("--disable code_mode", deny.call_args.args[0])
 
     def test_context_files_are_private(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode bits do not measure Windows ACLs.")
         self.prompt("inert")
         self.assertEqual(Path(CT._path("codex", "s1")).stat().st_mode & 0o777, 0o600)
 

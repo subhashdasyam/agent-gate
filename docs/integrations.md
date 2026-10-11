@@ -1,12 +1,16 @@
 # Installation and integrations
 
 Use Python 3.11 or later, with `venv` and `pip` support.
+Make sure that `python3` starts this Python installation on the host PATH.
+The bundled MCP server uses this command on Linux, macOS, and Windows.
+On Windows, enable the `python3` alias if your Python installation does not provide this command.
+
 Use a host version that supports native plugin hooks.
 The earlier checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21.2`.
 The new Codex MCP checks used `0.162.1` on Linux.
 Git is necessary for installation from a Git repository.
 
-Earlier native plugin files are available in GitHub. Version `0.2.1` is local branch work until it is pushed.
+Earlier native plugin files are available in GitHub. Version `0.2.2` is local branch work until the operator publishes it.
 The local manager tests used temporary profiles and a local checkout.
 Those tests did not use a fresh GitHub installation.
 Do not install both a native plugin and manual hooks for the same host.
@@ -217,36 +221,29 @@ The exact action can run once within 15 minutes after creation, after policy is 
 A missing approval interface means stop. An automatic reviewer cannot issue this grant.
 See [the complete grant workflow and data limits](context-and-approvals.md#who-creates-and-checks-a-codex-grant).
 
-### Codex code-mode limit
+### Codex Code Mode and execution guard
 
 Codex `0.162.1` does not supply complete nested shell arguments to `PreToolUse` in code mode.
 The hook receives the command and a random nested-call ID.
 The transcript records the outer JavaScript call with a different ID.
-The gate cannot prove which full arguments belong to that nested call.
+The execution guard does not guess these arguments.
 
-An exact-action grant needs the actual directory, tool, and complete arguments.
-The gate does not evaluate JavaScript or match another call by command text.
-Code-mode actions that need review stop without a request ID or grant.
-Harmless commands can still pass. Policy blocks still apply.
-Laya cannot supply the missing host metadata or create a grant.
+The pre-tool hook replaces the shell command with the guard through `updatedInput`.
+The guard first reports the actual directory, executor, and environment fingerprint. It does not execute the original command.
+The post-tool hook authenticates those facts and applies policy and optional Laya advice.
+For `review`, the bundled MCP server shows the same approval form as direct tools.
+The retry uses a new execution ticket and must match all displayed guard facts.
 
-For in-session approvals, start a new Codex session with direct tools:
-
-```bash
-codex --disable code_mode --disable code_mode_only
-```
-
+Keep Code Mode enabled. No disable flags are necessary.
 Keep the plugin, trusted hooks, and Codex sandbox active.
-Do not change tools or alter the command after a denial in the current session.
-Only the operator must select the direct-tool launch mode.
+The guard uses Bash on Linux and macOS. Native Windows uses PowerShell.
+CMD and custom shell semantics are not part of this guard contract.
 
-The direct-tool checks used exact transcript IDs and native MCP forms.
-The code-mode check permitted `pwd` and denied a local network fixture without a grant.
-The experimental `executed_tool_call_metadata` feature did not supply the required metadata before the hook.
+The original outer shell still starts before the guard. Its startup behavior remains a host responsibility.
 
-Complete code-mode support needs a Codex hook contract with resolved nested arguments and the actual execution directory.
-The contract must also identify the nested tool and relate its ID to the parent call.
-The gate must examine that contract before it permits code-mode grants.
+Direct tools keep exact transcript recovery and complete-argument grants on POSIX hosts.
+Guarded grants bind a controlled execution contract, not hidden transport arguments.
+Refer to [execution scope and OS checks](execution-guard.md).
 
 ### Legacy operator-terminal approvals
 
@@ -280,7 +277,7 @@ python3 adapters/bootstrap.py approve --deny APPROVAL_ID
 - The tool stores and compares the full SHA-256 value when the hook consumes the approval.
 - The approval tool must have terminal input and output. It refuses recognized Claude Code or Codex parent processes and environment markers.
 - An unknown Codex directory appears as `UNSEEN-WORKDIR@...`. The approval does not establish the actual directory.
-- POSIX systems use advisory file locks for shared state. The Windows path does not use those locks.
+- POSIX uses `flock`. Native Windows uses an exclusive byte-range lock for shared state.
 
 **CAUTION: Use OS controls to prevent agent writes to approval state.**
 
@@ -351,7 +348,7 @@ It has no complete approval interface. Use the native plugin for new installatio
 | File | Contract |
 |---|---|
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | Claude plugin manifest and `hooks/claude.json` reference. |
-| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.1`. |
+| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.2`. |
 | [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) | Codex plugin manifest and `hooks/codex.json` reference. |
 | [`hooks/claude.json`](../hooks/claude.json) | `PreToolUse`, `CwdChanged`, and optional user-origin prompt capture. |
 | [`hooks/codex.json`](../hooks/codex.json) | `PreToolUse` for `Bash` and `apply_patch`. |

@@ -7,12 +7,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 import venv
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "adapters"))
+import platform_support as P
+
 SCRIPTS = {"claude": "claude_code_hook.py", "codex": "codex_hook.py",
            "hermes": "hermes_gated.py", "approve": "gate_approve.py", "mcp": "approval_mcp.py"}
 
@@ -29,7 +31,7 @@ def runtime_python():
 
 
 def setup_command():
-    return shlex.join([sys.executable, str(ROOT / "adapters" / "bootstrap.py"), "--setup"])
+    return P.command([sys.executable, str(ROOT / "adapters" / "bootstrap.py"), "--setup"])
 
 
 def check_runtime():
@@ -60,10 +62,7 @@ def prepare_runtime(with_mcp=False):
     target = runtime_dir()
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Serial setup prevents two plugin hosts from changing the same environment.
-    with (target / "setup.lock").open("a") as lock:
-        if os.name != "nt":
-            import fcntl
-            fcntl.flock(lock, fcntl.LOCK_EX)
+    with P.file_lock(str(target / "setup.lock"), timeout=30):
         py = runtime_python()
         if (target / "ready").exists():
             verify_runtime(py)

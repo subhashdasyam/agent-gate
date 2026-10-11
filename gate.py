@@ -777,7 +777,7 @@ def _stdin_program(c):
 
 def _gate_control(name, args):
     """Recognize executed gate controls, not a project name in ordinary data."""
-    if name in {"gate_approve", "gate-approve", "gate_approve.py"}:
+    if name in {"gate_approve", "gate-approve", "gate_approve.py", "execution_guard.py", "execution_guard"}:
         return True
     if name == "agent-gate":
         return args[:1] not in (["--help"], ["--version"])
@@ -937,7 +937,7 @@ def _one(c, facts, home, depth):
             if name == "python" and (a == "-m" or (a.startswith("-m") and len(a) > 2)):
                 mod = a[2:] if len(a) > 2 else (lits[i + 1] if i + 1 < len(args) else "")
                 rest = args[i + (1 if len(a) > 2 else 2):]
-                if mod.rsplit(".", 1)[-1] == "gate_approve":
+                if mod.rsplit(".", 1)[-1] in ("gate_approve", "execution_guard"):
                     facts.set("gate_tamper", "executes the operator approval module")
                 if mod == "pip":
                     if rest and _lit(rest[0]) in INSTALL_SUBS:

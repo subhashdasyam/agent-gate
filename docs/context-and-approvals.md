@@ -18,7 +18,7 @@ No new HTTP service, database, or agent client is necessary.
 | Submitted prompt | `UserPromptSubmit` | `UserPromptSubmit` | `pre_llm_call`, from `user_message` only. |
 | Pending action | `PreToolUse` | `PreToolUse` | `pre_tool_call`. |
 | Completed result | `PostToolUse` | `PostToolUse`, `PostToolUseFailure` | `post_tool_call`. |
-| Actual directory | Exact transcript call, with session directory as the default. | Hook directory and `CwdChanged` state. | Terminal task state and backend configuration. |
+| Actual directory | Exact transcript call or authenticated guard facts from the actual tool process. | Hook directory and `CwdChanged` state. | Terminal task state and backend configuration. |
 
 The adapters pass these events to [`context.py`](../adapters/context.py).
 Each record has a host, session, event, timestamp, tool name, and source.
@@ -73,23 +73,29 @@ Keep state private. Select a trusted model endpoint before you enable Laya.
 8. The agent retries the unchanged action. The gate checks policy again and consumes the grant atomically.
 9. A second use is denied. A new policy block also denies the action.
 
-The pre-tool adapter writes the review request.
+For direct tools, the pre-tool adapter writes the review request.
+For guarded tools, the post-tool adapter writes the request after the facts check.
 The MCP server writes the grant after the client response.
 The pre-tool adapter checks and consumes that grant before tool execution.
 
 The agent supplies only the request ID. It cannot approve through an MCP argument or chat text.
 `review_details(request_id)` returns details. It never issues a grant.
 
-The grant binds the host, session, actual directory, actual tool name, and all tool arguments.
+A direct-tool grant binds the host, session, actual directory, actual tool name, and all tool arguments.
 For shell calls, Codex exposes less input to the hook than the execution tool receives.
 The adapter recovers full arguments from a regular transcript file through the exact tool-call ID and command.
 It does not trust another call with the same command text.
 Missing full arguments or an unknown directory stop exact-action approval.
 Transcript format is a host dependency, not a stable public schema.
 
-Code-mode shell calls lack the required transcript-linked ID in Codex `0.162.1`.
-They cannot receive exact-action grants in this version.
-See [the direct-tool launch procedure and code-mode limit](integrations.md#codex-code-mode-limit).
+Code Mode and native Windows use a separate guarded execution contract.
+The guard reports the actual directory and environment before the original command runs.
+The trusted post-tool hook creates the request from authenticated facts.
+The trusted pre-tool hook consumes the grant before one execution attempt.
+
+The runtime guard then compares the actual facts with the grant scope.
+The guard never writes private state.
+Refer to [the execution guard](execution-guard.md) for the complete scope.
 
 Requests expire 15 minutes after creation. A retry does not extend the deadline.
 The form has a 45-second total response deadline.
@@ -103,10 +109,10 @@ The agent must stop. It must not change the command to avoid the decision.
 The store keeps closed decisions to prevent repeat prompts.
 It has no automatic cleanup. A trusted operator must maintain a full store outside the agent session.
 
-POSIX file locks prevent concurrent grant use. Windows exact-action MCP grants are not supported in this version.
+POSIX file locks and Windows byte-range locks prevent concurrent grant use.
 Corrupt review JSON causes a denial. The file stays unchanged.
 
-The shared shell parser recognizes executed approval tools and changes to the gate installation.
+The shared shell parser recognizes executed approval tools, manual guard calls, and changes to the gate installation.
 An ordinary text argument that contains `agent-gate` does not count as a gate change.
 Protected code, runtime, and state paths keep the same access restrictions.
 

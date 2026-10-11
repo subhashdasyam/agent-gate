@@ -1,6 +1,6 @@
 {
   "name": "agent-gate",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Check shell commands and file changes before Claude Code executes them.",
   "author": {"name": "Subhash Dasyam"},
   "repository": "https://github.com/subhashdasyam/agent-gate",

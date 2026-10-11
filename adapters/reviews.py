@@ -13,8 +13,6 @@ MAX_REQUESTS = 1000
 
 
 def _store():
-    if C.fcntl is None:
-        raise RuntimeError("In-session approval requires POSIX file locks.")
     return C._locked_json(os.path.join(C.STATE_DIR, "reviews.json"), {}, strict=True)
 
 

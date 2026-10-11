@@ -1,16 +1,16 @@
 {
   "hooks": {
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30}]}
+      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "commandWindows": "python3 -I -c \"import os,runpy,sys; p=os.path.join(os.environ['PLUGIN_ROOT'],'adapters','bootstrap.py'); sys.argv=[p,'codex']; runpy.run_path(p,run_name='__main__')\"", "timeout": 30}]}
     ],
     "PostToolUse": [
-      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30}]}
+      {"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "commandWindows": "python3 -I -c \"import os,runpy,sys; p=os.path.join(os.environ['PLUGIN_ROOT'],'adapters','bootstrap.py'); sys.argv=[p,'codex']; runpy.run_path(p,run_name='__main__')\"", "timeout": 30}]}
     ],
     "PreToolUse": [
       {
         "matcher": "^(Bash|apply_patch)$",
         "hooks": [
-          {"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "timeout": 30, "statusMessage": "agent-gate"}
+          {"type": "command", "command": "python3 \"${PLUGIN_ROOT}/adapters/bootstrap.py\" codex", "commandWindows": "python3 -I -c \"import os,runpy,sys; p=os.path.join(os.environ['PLUGIN_ROOT'],'adapters','bootstrap.py'); sys.argv=[p,'codex']; runpy.run_path(p,run_name='__main__')\"", "timeout": 30, "statusMessage": "agent-gate"}
         ]
       }
     ]

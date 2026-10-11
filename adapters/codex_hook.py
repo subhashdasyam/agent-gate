@@ -7,21 +7,18 @@ events/pre_tool_use.rs):
     permission_mode, tool_name, tool_use_id, tool_input
   - tool_name "Bash" (shell + unified exec_command): tool_input.command = str
   - tool_name "apply_patch" (aliases Edit/Write): tool_input.command = patch
-  - only DENY is honoured. "ask" and bare "allow" are treated as hook
-    failures and the call PROCEEDS. A deny needs a non-empty reason; exit 2
-    needs non-empty stderr; async hooks cannot block. So:
+  - "ask" is not supported. An allow with updatedInput replaces the command.
+    A deny needs a non-empty reason; exit 2 needs non-empty stderr. So:
       run / log      -> no output, exit 0
       review         -> deny and store the full action; bundled MCP asks the
                         user in this session, then one exact retry may proceed
       block / crash  -> exit 2 + reason
 
-Codex blind spot: exec_command takes a `workdir` argument that is NOT passed
-to hooks, so `rm -rf *` with workdir=$HOME looks like a project-local delete.
-We recover workdir from the session transcript when the call is already
-recorded (Codex persists the call before running it, possibly async). If we
-cannot find it, relative paths resolve to an unknown location in strict mode
-(no sandbox). In normal mode Codex's OS sandbox already bounds writes to the
-workspace, so the session cwd is used.
+Direct shell calls recover full arguments by exact transcript ID. Code Mode
+and native Windows use a replacement guard: first observe real runtime facts,
+then obtain a policy decision or MCP review, then retry with those facts bound.
+The guard never writes private state. Unsupported outer shells fail without
+running the original command. See docs/execution-guard.md for the contract.
 """
 import json
 import os
@@ -34,6 +31,7 @@ import common as C  # noqa: E402
 import context as CT
 import laya_client as L
 import reviews as R
+import guard_dispatch as D
 
 APPROVE_CMD = C.approval_command()
 SHELL_CALLS = ("exec_command", "shell", "local_shell", "container.exec", "shell_command")
@@ -114,6 +112,10 @@ def _command_str(ti):
 
 
 def handle(p):
+    if p.get("hook_event_name") == "PostToolUse" and p.get("tool_name") == "Bash":
+        if D.collect(p):
+            CT.capture("codex", p)
+            return
     CT.capture("codex", p)
     if p.get("hook_event_name") != "PreToolUse":
         return
@@ -140,6 +142,15 @@ def handle(p):
         run_cwd = cwd
     elif tool == "Bash":
         call = recover_call(p.get("transcript_path"), payload, p.get("tool_use_id"))
+        if os.name == "nt" or (call is None and re.fullmatch(
+                r"exec-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", p.get("tool_use_id") or "")):
+            # The guard observes the real workdir. Never infer it from JavaScript.
+            preliminary = G.gate(payload, cwd, "agent", agent="codex", mode="strict",
+                                 root=root, cwd_known=False)
+            if preliminary["decision"] == "block":
+                C.deny_exit("agent-gate block: " + C.explain(preliminary) + ". Blocked by policy; no grant can override this.")
+            D.prepare(p, payload, root, mode)
+            return
         found = call is not None
         if found:
             bind_tool, actual_args = call
@@ -171,14 +182,6 @@ def handle(p):
     else:
         return
     v = L.advise(v, "codex", sid, tool, actual_args or ti, run_cwd, root, mode, cwd_known)
-    if v["decision"] == "review" and actual_args is None and re.fullmatch(
-            r"exec-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", p.get("tool_use_id") or ""):
-        C.log({"harness": "codex", "session": sid, "tool": tool, "decision": "review",
-               "why": ["missing_call_context"], "context_source": "code_mode"})
-        C.deny_exit("agent-gate review: Codex code-mode shell calls do not expose full arguments or a transcript-linked call ID. "
-                    "No exact-action grant is possible. Start a new Codex session with "
-                    "`--disable code_mode --disable code_mode_only` to use direct tools. "
-                    "Do not retry through another shell or bypass the gate.")
     if os.environ.get("GATE_APPROVAL_TRANSPORT") == "terminal":
         decide(v, tool, payload, run_cwd, bind_cwd, sid, mode, why_mode)
     else:

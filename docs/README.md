@@ -8,7 +8,7 @@ These pages describe the current source and the planned work.
 
 The source directory uses the name `gate-v2.2`.
 The public repository uses the name `agent-gate`.
-The native plugin version in this branch is `0.2.1`.
+The native plugin version in this branch is `0.2.2`.
 
 The original use case was the ProjectDiscovery threat: a keyword-triggered model backdoor that transfers `.env` data through download-and-execute code.
 The gate examines the tool action rather than the model's explanation.
@@ -21,6 +21,7 @@ The end-to-end harness uses a scripted model and independent effect checks.
 | [Architecture](architecture.md) | Tool flow, parser data, content checks, runtime, state, and failure behavior. |
 | [Installation and integrations](integrations.md) | Native plugins, manual hooks, host behavior, human approvals, configuration, and fault checks. |
 | [Context and approvals](context-and-approvals.md) | Actual host events, exact Codex grants, data limits, optional Laya wire format, and task examples. |
+| [Execution guard](execution-guard.md) | Code Mode, actual directory checks, approval scope, OS support, and security limits. |
 | [Policy and Python API](policy-and-api.md) | Rule order, protected paths, model merge, function contracts, and examples. |
 | [Tests and limits](testing-and-limits.md) | Measured results, historical claims, test procedures, and coverage limits. |
 | [Roadmap](roadmap.md) | Optional Laya integration, remaining validation, and future coverage. |
@@ -57,6 +58,9 @@ The agent can alter hooks or approval state through actions outside the gate's a
 | [`adapters/common.py`](../adapters/common.py) | Hook errors, deadlines, modes, logs, state, approvals, and `--doctor`. |
 | [`adapters/context.py`](../adapters/context.py) | Bounded prompt and result evidence, provenance, deduplication, and redaction. |
 | [`adapters/reviews.py`](../adapters/reviews.py) | Exact Codex requests, expiry, locks, and single-use grants. |
+| [`adapters/guard_dispatch.py`](../adapters/guard_dispatch.py) | Trusted hooks, authenticated guard facts, and execution tickets. |
+| [`adapters/execution_guard.py`](../adapters/execution_guard.py) | Runtime facts and guarded shell execution inside the host sandbox. |
+| [`adapters/platform_support.py`](../adapters/platform_support.py) | POSIX and Windows state locks and command argument quotes. |
 | [`adapters/approval_mcp.py`](../adapters/approval_mcp.py) | Native client forms and client-session validation. |
 | [`adapters/laya_client.py`](../adapters/laya_client.py) | Optional model advice with a deadline and escalation-only decisions. |
 | [`adapters/gate_approve.py`](../adapters/gate_approve.py) | Human approval, pending-call list, and denial. |

@@ -216,7 +216,7 @@ tree-sitter-bash==0.25.1
 Only an explicit `--setup` creates the virtual environment and downloads packages.
 Setup checks exact package versions and parses Bash before it writes the ready marker.
 A ready runtime still receives these checks.
-POSIX setup uses an advisory lock to serialize setup for one runtime key.
+Setup uses a platform-specific lock to serialize setup for one runtime key.
 
 The launcher uses isolated Python mode, `-I`, for the adapter process.
 The launcher sets `GATE_REQUIRE_PARSER=1`.
@@ -231,6 +231,7 @@ A tool hook never installs a missing dependency.
 | `approvals.json` | Pending and approved calls for the Claude/Codex one-time protocol. |
 | `sessions/context-<hash>.json` | Redacted prompt and result evidence, scoped by host and session, with a 256 KiB cap. |
 | `reviews.json` | Exact Codex MCP requests, client decisions, expiry, and single-use consumption. |
+| `dispatch.json` | Guard tickets, per-call authentication keys, verified runtime facts, and short-lived action records. |
 | `log.jsonl` | Decision records and caught gate errors. |
 
 The default state directory is `~/.local/state/agent-gate`.
@@ -241,10 +242,16 @@ Hermes adds a `hermes-` prefix to its session ID.
 New state files use POSIX mode `0600`.
 New session directories use mode `0700`.
 These creation modes do not repair permissions on paths that are present.
-POSIX systems use advisory locks for JSON state.
-Windows does not have the equivalent lock path.
+POSIX systems use advisory locks for JSON state. Windows uses exclusive byte-range locks.
 
-Exact Codex MCP grants therefore require POSIX locks in this version.
+A stable `.lock` sidecar covers the complete read, update, and atomic replacement.
+The hook refuses state access if neither backend is available.
+Windows creation modes do not establish ACL isolation from the agent account.
+Old hook processes must stop before the operator installs this version.
+Old processes use a different lock protocol.
+
+The [execution guard](execution-guard.md) runs through the current Codex shell tool and its OS sandbox.
+Trusted hooks keep private state access outside that tool process.
 Context filenames hash the host and full session ID instead of the legacy sanitized filename.
 
 The adapters record `log`, `review`, and `block`.

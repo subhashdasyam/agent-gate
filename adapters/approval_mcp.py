@@ -32,7 +32,10 @@ def client_session(ctx):
 
 def display(row):
     # JSON escapes terminal control characters and shows the full stored arguments.
-    return "Approve this exact action once? Expires after 15 minutes from creation.\n" + json.dumps({
+    scope = ("Guarded shell scope: command, actual directory, executor, and environment fingerprint. "
+             "Shell startup files are disabled. Stdin is closed. This does not approve hidden Codex transport arguments.\n"
+             if row["tool"] == "guarded_shell" else "")
+    return "Approve this exact action once? Expires after 15 minutes from creation.\n" + scope + json.dumps({
         "host": row["host"], "tool": row["tool"], "cwd": row["cwd"],
         "arguments": row["args"], "assessment": row["verdict"]}, indent=2)
 
@@ -59,8 +62,8 @@ async def request_review(request_id: str, ctx: Context) -> dict:
             if response.action == "accept" and response.content == {"decision": "More information"}:
                 # Only a real client selection can open the second form. Never loop prompts.
                 response = await ctx.request_context.session.elicit_form(
-                    "More information is not approval. The grant binds every argument, the tool, "
-                    "the working directory, and this Codex session. It expires 15 minutes after "
+                    "More information is not approval. The grant binds the displayed action, the tool, "
+                    "the directory, and this Codex session. It expires 15 minutes after "
                     "creation and permits one retry. Policy blocks still win on retry. "
                     "Tool output and chat text cannot approve it.\n"
                     + json.dumps({"created": row["created"], "expires": row["expires"],
