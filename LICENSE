@@ -1,0 +1,104 @@
+Agent Gate Personal and Noncommercial License 1.0
+
+Copyright (c) 2026 Subhash Dasyam
+Repository: https://github.com/subhashdasyam/agent-gate
+
+1. Scope
+
+The licensor is Subhash Dasyam.
+The Software means the original Agent Gate code, documentation, and diagrams
+that the licensor provides under this license.
+Separately licensed third-party materials are not part of the Software under
+this license. Their own licenses continue to apply.
+
+This is a custom source-available license. It is not the MIT License or an
+OSI-approved open-source license.
+
+2. Noncommercial permission
+
+Subject to these terms, the licensor grants you permission, without charge, to
+use, copy, study, modify, and distribute the Software for noncommercial purposes.
+This permission includes personal projects, hobbies, private study, and
+noncommercial research and education.
+It includes distribution of modified and unmodified copies, in source or
+compiled form, only for noncommercial purposes.
+
+Noncommercial means that the activity is not directed toward commercial
+advantage or financial compensation and does not support business operations
+or paid work.
+The use of paid development tools does not, by itself, make an otherwise
+noncommercial activity commercial.
+
+3. Commercial permission
+
+All commercial use, modification, and distribution require prior, separate
+written permission from the licensor.
+This requirement applies to the original Software and to modified copies.
+Commercial activities include:
+
+- Internal business use or work for an employer, client, or commercial enterprise.
+- Use as part of paid advice, contract work, or another paid service.
+- Sale, resale, or commercial license grants for copies or modified versions.
+- A paid or commercial hosted service that uses the Software.
+- Inclusion in a commercial product, service, bundle, or distribution.
+- Distribution for commercial advantage, even when recipients pay no fee.
+
+Attribution alone does not grant commercial permission.
+You can request commercial permission from Subhash Dasyam through the project
+repository. A request alone does not grant permission.
+
+4. Credit and distribution conditions
+
+For every distribution of the Software or any substantial part of it, you must:
+
+- Include a complete copy of this license.
+- Include the NOTICE file and preserve applicable copyright and credit notices.
+- Retain the author name and repository URL in the required credit below.
+- Keep the restrictions on the original Software intact.
+
+Required credit:
+
+Agent Gate by Subhash Dasyam
+https://github.com/subhashdasyam/agent-gate
+
+Recipients receive permission for the original Software directly under this
+license. You cannot grant them broader rights to the original Software.
+These conditions apply to source copies, compiled copies, forks, and modified
+distributions. A notice file or included documentation can contain the credit.
+
+5. Modified versions and private changes
+
+When you distribute a modified version, clearly identify it as modified.
+Include a description of your changes and their dates in the included
+documentation or a change notice.
+Do not attribute your changes to the licensor or imply the licensor's endorsement.
+
+You do not need to publish private modifications or disclose their source code.
+This license does not require a runtime banner or a credit display in a product
+interface. Distributed copies must still meet section 4.
+
+6. Other rights
+
+The licensor reserves all rights not expressly granted by this license.
+No trademark rights or endorsement rights are granted.
+This license does not limit statutory exceptions or rights that applicable law
+does not permit the licensor to restrict.
+It does not alter rights that you obtained under a separate or earlier license.
+Permissions under this license apply only while you comply with its terms.
+
+7. No warranty
+
+To the extent permitted by applicable law, the Software comes as is and as available.
+The licensor provides no express or implied warranty.
+This exclusion covers warranties of merchantability, fitness for a particular
+purpose, title, and noninfringement.
+You accept the risks of use, modification, and distribution.
+
+8. Limitation of liability
+
+To the extent permitted by applicable law, the licensor is not liable for any
+claim, damage, loss, or expense from the Software or this license.
+This exclusion applies under contract, tort, or any other legal theory, even
+if the licensor received notice of the possible loss.
+It includes loss of data, profits, business, and use, and direct, indirect,
+incidental, special, and consequential damages.

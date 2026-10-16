@@ -126,3 +126,13 @@ Codex `0.162.1` passed native form and bundled-server checks in isolated test pr
 Scripted responses test the transport, not real human consent.
 The pinned-parser corpus caught 318/318 attack probes. This does not prove complete protection.
 Refer to the [dated evidence and test limits](docs/testing-and-limits.md).
+
+## License
+
+Free personal and noncommercial use, modification, and redistribution are permitted under the [Agent Gate Personal and Noncommercial License 1.0](LICENSE).
+Distributed copies must retain the [credit notice](NOTICE) for Subhash Dasyam and identify any modifications.
+Commercial use, paid services, resale, and commercial redistribution require separate written permission from Subhash Dasyam.
+Credit alone does not grant commercial permission.
+
+This is source-available software, not MIT-licensed or OSI-approved open source.
+Third-party software retains its own licenses.
