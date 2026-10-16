@@ -31,7 +31,8 @@ class PluginTests(unittest.TestCase):
         self.home = self.tmp / "home"
         self.project = self.home / "project with spaces"
         self.project.mkdir(parents=True)
-        self.env = {**os.environ, "HOME": str(self.home), "GATE_STATE_DIR": str(self.tmp / "state"),
+        self.env = {**os.environ, "HOME": str(self.home), "USERPROFILE": str(self.home),
+                    "GATE_STATE_DIR": str(self.tmp / "state"),
                     "GATE_SELF_PROTECT": "0", "GATE_PROTECT": str(ROOT / "adapters"),
                     "CLAUDE_PROJECT_DIR": str(self.project), "GATE_MODE": "strict"}
         self.env.pop("GATE_REQUIRE_PARSER", None)

@@ -328,28 +328,33 @@ def _real(p):
         return p
 
 
+def _path_key(p):
+    return os.path.normcase(os.path.normpath(p)).replace(os.path.sep, "/")
+
+
 def _classify_abs(p, cwd):
     if p in NULLISH or p.startswith("/dev/fd/") or p.startswith("/proc/self/fd/"):
         return "null"
+    p = _path_key(p)
     if cwd:
-        c = os.path.normpath(cwd)
+        c = _path_key(cwd)
         if p == c:
             return "cwdroot"
         if p.startswith(c.rstrip("/") + "/"):
             return "cwd"
     for t in TMP_ROOTS:
-        if p.startswith(t + "/"):
+        if p.startswith(_path_key(t).rstrip("/") + "/"):
             return "tmp"
     return "system"
 
 
 def _parts(p):
-    return [x for x in p.split("/") if x]
+    return [x for x in p.replace(os.path.sep, "/").split("/") if x]
 
 
 def _lparts(p):
     """Lower-cased parts: .Claude == .claude on case-insensitive file systems."""
-    return [x.lower() for x in p.split("/") if x]
+    return [x.lower() for x in _parts(p)]
 
 
 def is_config_path(p):
@@ -368,10 +373,10 @@ def in_protected(p):
     if not p or not os.path.isabs(p):
         return False   # relative text would resolve against the gate's own cwd
     for cand in {p, _real(p)}:
-        lc = cand.lower()
+        lc = _path_key(cand).lower()
         for prot in _extra_protected():
             for pr in {prot, _real(prot)}:
-                pl = pr.lower().rstrip("/")
+                pl = _path_key(pr).lower().rstrip("/")
                 if lc == pl or lc.startswith(pl + "/"):
                     return True
     return False

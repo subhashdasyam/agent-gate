@@ -3,6 +3,19 @@
 Test results describe particular inputs and environments.
 They do not prove that every dangerous action will get review.
 
+### Scoped approval reuse: 2026-10-16, version 0.2.5
+
+The guard, context, scoped-review, and plugin suites passed 118 tests on Linux with the pinned dependencies.
+Core checks and legacy adapter checks also passed.
+The tests cover explicit timed grants, stable deadlines, changed scope, duplicate execution IDs, and fresh review after a spent grant.
+Actual guard subprocess checks cover repeated effects, changed directory and environment, policy changes, and failed commands.
+These checks use synthetic files and scripted approval responses, not real human consent.
+
+The native Codex timed-reuse test did not execute because its enclosing Agent Gate approval request timed out.
+The updated native harness remains unverified in this run.
+The CI matrix includes the new regressions, but native macOS and Windows results remain unverified.
+The current host plugin installation did not change.
+
 ### Approval state check: 2026-10-11, version 0.2.3
 
 State errors identify the affected file and distinguish an empty file from invalid JSON.

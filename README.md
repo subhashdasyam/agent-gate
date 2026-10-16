@@ -72,6 +72,10 @@ After runtime setup, ask Agent Gate to call `check_review_support` once in Codex
 This form check runs no command and creates no grant.
 If no form appears, refer to [Codex review forms](docs/integrations.md#codex-review-forms).
 
+Guarded shell reviews offer **Approve once** or **Allow same action for 15 minutes**.
+Timed approval applies only to the same command, verified directory, executor, environment, and policy scope in this session.
+Other tools retain one-time approval. Refer to [approval scope and limits](docs/context-and-approvals.md#approval-scope-and-reuse).
+
 The execution guard checks the actual directory before the original command runs.
 Linux and macOS use Bash. Native Windows uses PowerShell with conservative policy checks.
 Refer to [the execution guard](docs/execution-guard.md) for scope and validation limits.

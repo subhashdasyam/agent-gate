@@ -226,18 +226,18 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
                     action = {"cmd": f"curl --noproxy '*' --resolve fixture.invalid:{port}:127.0.0.1 "
                                      f"--max-time 2 http://fixture.invalid:{port}/fixture", "workdir": folder}
                     if code_mode:
-                        action = {"cmd": "python3 -c 'from pathlib import Path; Path(\"guard-proof\").write_text(\"inert\")'",
+                        action = {"cmd": "python3 -c 'open(\"guard-proof\",\"a\").write(\"inert\\n\")'",
                                   "workdir": str(target), "login": False}
 
                     def steps():
                         path = home / "gate-state" / "reviews.json"
-                        if path.is_file():
+                        if path.is_file() and not request_args:
                             rows = json.loads(path.read_text())
                             assert len(rows) == 1, rows
                             request_args["request_id"] = next(iter(rows))
                         steps = [{"cmd": "pwd", "workdir": str(target), "login": False},
                                  {"cmd": "pwd", "workdir": str(target), "login": False},
-                                 action, {"function": function, "arguments": request_args}, action, action] if code_mode else [
+                                 action, {"function": function, "arguments": request_args}, action, action, action] if code_mode else [
                             action, {"function": function, "arguments": request_args}, action, action]
                         if code_mode:
                             steps = [{"code": "text(await tools." + step.get("function", "exec_command")
@@ -254,11 +254,13 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
                 effects = sum(entry.get("GET") == "/fixture" for entry in model_logs)
                 outputs = json.dumps([entry for entry in model_logs if "codex_tool_result" in entry])
                 tool_results = [entry for entry in model_logs if "codex_tool_result" in entry]
-                assert len(captured) == 5 and captured[0]["tool_input"]["command"] == "pwd", captured
+                assert len(captured) == 6 and captured[0]["tool_input"]["command"] == "pwd", captured
                 assert all(row["tool_name"] == "Bash" and row["tool_use_id"].startswith("exec-")
                            and set(row["tool_input"]) == {"command"} for row in captured), captured
                 assert str(target) in outputs and "--disable code_mode" not in outputs, outputs
-                assert (target / "guard-proof").exists() == (final_reply.get("content") == {"decision": "Approve"})
+                approved = (final_reply.get("content") or {}).get("decision") in (
+                    "Approve", "Approve once", "Allow same action for 15 minutes")
+                assert (target / "guard-proof").exists() == approved
             expected_forms = 0 if policy == "never" else len(reply) if isinstance(reply, list) else 1
             assert len(elicitations) == expected_forms, (elicitations, model_logs[-15:], errors[-30:],
                 [str(path.relative_to(home)) for path in (home / "gate-state").rglob("*")],
@@ -267,10 +269,12 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
             if elicitations:
                 request = elicitations[0]
                 assert request["threadId"] == tid, request
-                assert request["requestedSchema"].get("properties", {}).get("decision", {}).get("enum") == (
-                    ["Confirm form"] if readiness else ["Approve", "Deny", "More information"]), request
+                choices = (["Confirm form"] if readiness else ["Approve", "Deny", "More information"] if not plugin
+                           else ["Approve once"] + (["Allow same action for 15 minutes"] if code_mode else [])
+                           + ["Deny", "More information"])
+                assert request["requestedSchema"].get("properties", {}).get("decision", {}).get("enum") == choices, request
             if len(elicitations) == 2:
-                assert elicitations[1]["requestedSchema"]["properties"]["decision"]["enum"] == ["Approve", "Deny"]
+                assert elicitations[1]["requestedSchema"]["properties"]["decision"]["enum"] == choices[:-1]
             tool_results = [entry for entry in model_logs if "codex_tool_result" in entry]
             if plugin and not flow:
                 outputs = tool_results[-1]["codex_tool_result"][-1]["output"]
@@ -291,15 +295,21 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
                     if flow:
                         rid = request_args["request_id"]
                     row = R.details(rid, tid)
-                    assert row["status"] == (("used" if flow else "approved") if final_reply.get("content") == {"decision": "Approve"}
+                    choice = (final_reply.get("content") or {}).get("decision")
+                    approved = choice in ("Approve", "Approve once", "Allow same action for 15 minutes")
+                    reusable = choice == "Allow same action for 15 minutes"
+                    assert row["status"] == (("used" if flow and not reusable else "approved") if approved
                                              else "client-declined" if final_reply["action"] == "decline"
                                              else "cancelled" if final_reply["action"] == "cancel" else "denied"), row
                     if policy == "never":
                         assert "codex -a on-request -c approvals_reviewer=user" in json.dumps(model_logs), model_logs
                     if flow:
-                        effects = int((target / "guard-proof").exists()) if code_mode else sum(
+                        effects = (len((target / "guard-proof").read_text().splitlines())
+                                   if (target / "guard-proof").exists() else 0) if code_mode else sum(
                             entry.get("GET") == "/fixture" for entry in model_logs)
-                        assert effects == int(row["status"] == "used"), (effects, row, model_logs)
+                        assert effects == (2 if reusable else 1 if approved else 0), (effects, row, model_logs)
+                        if reusable:
+                            assert row["uses"] == 2, row
                         import context as CT
                         assert CT.snapshot("codex", tid)["status"] == "present"
                 finally:
@@ -311,7 +321,7 @@ def probe(python, reply, cli=False, plugin=False, flow=False, code_mode=False,
                 assert parsed["client_meta"]["sessionId"] == tid, parsed
             return {"reply": reply, "elicitation_count": len(elicitations),
                     "approval_policy": policy,
-                    "thread_bound": True, "schema_choices": 3, "bundled_plugin": plugin,
+                    "thread_bound": True, "schema_choices": len(choices) if elicitations else 0, "bundled_plugin": plugin,
                     "hook_round_trip": flow, "code_mode": code_mode,
                     "network_effects": effects if flow and not code_mode else 0,
                     "file_effects": effects if flow and code_mode else 0}
@@ -331,7 +341,7 @@ def main():
     parser.add_argument("--mcp-python", required=True)
     parser.add_argument("--cli", action="store_true", help="Also exercise the real CLI form UI.")
     parser.add_argument("--plugin", action="store_true", help="Also load the real bundled server in a fresh home.")
-    parser.add_argument("--flow", action="store_true", help="Inert localhost action: deny, client review, retry, deny reuse.")
+    parser.add_argument("--flow", action="store_true", help="Inert localhost action: review, one execution, and fresh review.")
     parser.add_argument("--code-mode", action="store_true", help="Also test the hook flow through nested JavaScript calls.")
     args = parser.parse_args()
     print(subprocess.check_output(["codex", "--version"], text=True).strip())
@@ -362,7 +372,10 @@ def main():
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True)), flush=True)
         print(json.dumps(probe(args.mcp_python, None, plugin=True, flow=True, policy="never")), flush=True)
     if args.code_mode:
-        for reply in ({"action": "accept", "content": {"decision": "Approve"}},
+        for reply in ({"action": "accept", "content": {"decision": "Approve once"}},
+                      {"action": "accept", "content": {"decision": "Allow same action for 15 minutes"}},
+                      [{"action": "accept", "content": {"decision": "More information"}},
+                       {"action": "accept", "content": {"decision": "Allow same action for 15 minutes"}}],
                       {"action": "accept", "content": {"decision": "Deny"}},
                       {"action": "cancel", "content": None}):
             print(json.dumps(probe(args.mcp_python, reply, plugin=True, flow=True, code_mode=True)), flush=True)

@@ -39,12 +39,17 @@ def _assessment(ticket, observed):
     with C.session_state(ticket["sid"]) as state:
         verdict = E.assess(ticket, observed, state)
         snapshot = json.loads(json.dumps(state))
+    verdict["_guard_policy"] = E.policy_binding(verdict)
     verdict = L.advise(verdict, "codex", ticket["sid"], "guarded_shell", observed,
                        observed["cwd"], ticket["root"], ticket["mode"], True)
     if verdict["decision"] != "run":
         C.log({"harness": "codex", "session": ticket["sid"], "tool": "guarded_shell",
                "decision": verdict["decision"], "why": verdict.get("why"), "cwd": observed["cwd"]})
     return verdict, snapshot
+
+
+def _context(ticket, verdict):
+    return {"root": ticket["root"], "mode": ticket["mode"], "assessment": E.policy_binding(verdict)}
 
 
 def prepare(p, command, root, mode):
@@ -62,6 +67,13 @@ def prepare(p, command, root, mode):
               "expected": None, "state": {}, "reviewed": False}
     action_id, call_id = _id(sid, command), _id(sid, call)
     with _store() as data:
+        data["calls"] = {k: v for k, v in data["calls"].items()
+                         if v["created"] > time.time() - (60 if v.get("collected") else 24 * 3600)}
+        data["actions"] = {k: v for k, v in data["actions"].items() if v["expires"] > time.time()}
+        if call_id in data["calls"] or len(data["calls"]) >= MAX_RECORDS:
+            C.deny_exit("agent-gate: duplicate call ID or full guard store. No execution ticket issued.")
+        # Reserve the host call before it can spend a grant, including under concurrency.
+        data["calls"][call_id] = {"created": time.time(), "issued": False}
         candidate = data["actions"].get(action_id)
         if candidate and candidate["expires"] > time.time() and candidate["root"] == ticket["root"] \
                 and candidate["facts"]["executor"] == shell:
@@ -73,27 +85,30 @@ def prepare(p, command, root, mode):
         verdict, state = _assessment(ticket, observed)
         if verdict["decision"] == "block":
             C.deny_exit("agent-gate block: " + C.explain(verdict) + ". Blocked by policy; no grant can override this.")
-        rid = candidate.get("request_id")
-        if verdict["decision"] == "review" or rid:
-            if not rid:
-                rid, _ = R.pending("codex", sid, observed["cwd"], "guarded_shell", observed, verdict, p.get("turn_id"))
-            sha = R.binding("codex", sid, observed["cwd"], "guarded_shell", observed)
-            if not R.consume(rid, sid, sha):
+        if verdict["decision"] == "review" or candidate.get("request_id"):
+            context = _context(ticket, verdict)
+            rid, _ = R.pending("codex", sid, observed["cwd"], "guarded_shell", observed, verdict,
+                               p.get("turn_id"), context=context, attempt_id=call)
+            sha = R.binding("codex", sid, observed["cwd"], "guarded_shell", observed, context)
+            if not R.consume(rid, sid, sha, attempt_id=call):
                 _review_message(rid, sid)
+            grant = R.details(rid, sid)
+            C.log({"harness": "codex", "session": sid, "tool": "guarded_shell", "request_id": rid,
+                   "decision": "approved-reuse" if grant.get("approval_scope") == R.REUSE else "approved-once",
+                   "cwd": observed["cwd"], "expires": grant["expires"], "uses": grant.get("uses", 1)})
+            ticket.update(request_id=rid, expires=min(ticket["expires"], grant["expires"]))
             ticket["reviewed"] = True
-        ticket.update(expected=observed, state=state)
+        ticket.update(expected=observed, state=state, assessment=verdict["_guard_policy"])
     encoded = E.encode(ticket)
     if len(encoded) > E.MAX_TICKET_BYTES:
         C.deny_exit("agent-gate: guarded action is too large. No original command ran.")
     rewritten = P.command([sys.executable, "-I", os.path.join(C.HERE, "execution_guard.py"), encoded])
     with _store() as data:
-        data["calls"] = {k: v for k, v in data["calls"].items()
-                         if v["created"] > time.time() - (60 if v.get("collected") else 24 * 3600)}
-        data["actions"] = {k: v for k, v in data["actions"].items() if v["expires"] > time.time()}
-        if call_id in data["calls"] or len(data["calls"]) >= MAX_RECORDS:
-            C.deny_exit("agent-gate: duplicate call ID or full guard store. No execution ticket issued.")
-        data["calls"][call_id] = {"ticket": ticket, "created": time.time(), "rewritten": rewritten,
+        data["calls"][call_id] = {"ticket": ticket, "created": time.time(), "rewritten": rewritten, "issued": True,
                                   "tool": p["tool_name"], "turn_id": p.get("turn_id")}
+        if candidate and data["actions"].get(action_id) == candidate:
+            # The next operation must probe its actual directory and environment again.
+            data["actions"].pop(action_id)
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
           "updatedInput": {"command": rewritten}}}))
 
@@ -139,6 +154,8 @@ def collect(p):
         record = data["calls"].get(call_id)
         if record is None:
             return False
+        if record.get("issued") is False:
+            C.deny_exit("agent-gate: no execution ticket was issued for this call.")
         if record.get("collected"):
             C.deny_exit("agent-gate: duplicate guard result. No new authorization.")
         record["collected"] = True
@@ -182,15 +199,17 @@ def collect(p):
     if verdict["decision"] == "block":
         C.deny_exit("agent-gate block: " + C.explain(verdict) + ". No original command ran.")
     rid = None
+    status = None
     if verdict["decision"] == "review":
-        rid, _ = R.pending("codex", sid, observed["cwd"], "guarded_shell", observed, verdict, p.get("turn_id"))
+        rid, status = R.pending("codex", sid, observed["cwd"], "guarded_shell", observed, verdict,
+                                p.get("turn_id"), context=_context(ticket, verdict), attempt_id=call)
     with _store() as data:
         actions = data["actions"]
         if len(actions) >= MAX_RECORDS and _id(sid, ticket["command"]) not in actions:
             C.deny_exit("agent-gate: guard action store is full. No new authorization.")
         actions[_id(sid, ticket["command"])] = {"facts": observed, "root": ticket["root"],
             "expires": time.time() + C.APPROVAL_TTL_S, "request_id": rid}
-    if rid:
+    if rid and status != "approved":
         _review_message(rid, sid)
     C.deny_exit("agent-gate: actual directory and environment checked. No original command ran. "
                 "Retry the unchanged command once to execute it inside the host sandbox. No human approval is needed.")

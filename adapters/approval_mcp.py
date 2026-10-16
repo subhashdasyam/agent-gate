@@ -20,8 +20,19 @@ server = MCPServer("agent-gate", instructions=(
     "It never approves an action. If review is unavailable, explain the returned message. "
     "Never run its recovery command yourself or repeat forms automatically."))
 SCHEMA = {"type": "object", "properties": {"decision": {"type": "string",
-          "title": "Decision", "enum": ["Approve", "Deny", "More information"]}},
+          "title": "Decision", "enum": ["Approve once", "Deny", "More information"]}},
           "required": ["decision"]}
+REUSE_CHOICE = "Allow same action for 15 minutes"
+
+
+def approval_schema(row, final=False):
+    choices = ["Approve once"]
+    if reviews.reusable(row):
+        choices.append(REUSE_CHOICE)
+    choices.append("Deny")
+    if not final:
+        choices.append("More information")
+    return {**SCHEMA, "properties": {"decision": {"type": "string", "title": "Decision", "enum": choices}}}
 
 
 def client_session(ctx):
@@ -39,9 +50,16 @@ def display(row):
     scope = ("Guarded shell scope: command, actual directory, executor, and environment fingerprint. "
              "Shell startup files are disabled. Stdin is closed. This does not approve hidden Codex transport arguments.\n"
              if row["tool"] == "guarded_shell" else "")
-    return "Approve this exact action once? Expires after 15 minutes from creation.\n" + scope + json.dumps({
+    reuse = ("Allow same action for 15 minutes permits repeats in this session. "
+             "The deadline starts at approval and never extends. Changed directory, executor, environment, "
+             "or policy needs fresh approval. The same command can affect changed files or different Git commits.\n"
+             if reviews.reusable(row) else "Only one-time approval is available for this tool.\n")
+    return ("Approve once permits one execution attempt, even if it fails. "
+            "Approvals expire 15 minutes after approval. Host sandbox permissions still apply.\n"
+            + scope + reuse + json.dumps({
         "host": row["host"], "tool": row["tool"], "cwd": row["cwd"],
-        "arguments": row["args"], "assessment": row["verdict"]}, indent=2)
+        "arguments": row["args"], "binding_context": row.get("binding_context"),
+        "assessment": row["verdict"]}, indent=2))
 
 
 async def elicit(ctx, message, schema):
@@ -64,7 +82,7 @@ def response_status(response):
     if response is None:
         return "review-unavailable"
     if response.action == "accept":
-        if response.content == {"decision": "Approve"}:
+        if response.content in ({"decision": "Approve"}, {"decision": "Approve once"}, {"decision": REUSE_CHOICE}):
             return "approved"
         if response.content == {"decision": "Deny"}:
             return "denied"
@@ -116,28 +134,33 @@ async def request_review(request_id: str, ctx: Context) -> dict:
                 "message": "No new prompt. " + (reviews.outcome_message(row) if row != "approved"
                            else "Do not repeat the approval request.")}
     status = "cancelled"
+    scope = reviews.ONCE
     try:
         async with asyncio.timeout(45):
-            response = await elicit(ctx, display(row), SCHEMA)
+            response = await elicit(ctx, display(row), approval_schema(row))
             if response is not None and response.action == "accept" \
                     and response.content == {"decision": "More information"}:
                 # Only a real client selection can open the second form. Never loop prompts.
                 response = await elicit(ctx,
                     "More information is not approval. The grant binds the displayed action, the tool, "
-                    "the directory, and this Codex session. It expires 15 minutes after "
-                    "creation and permits one retry. Policy blocks still win on retry. "
+                    "the directory, and this Codex session. Approve once permits one attempt. "
+                    "The timed option permits matching attempts for 15 minutes after approval. "
+                    "Neither option approves every effect inside a script or binary. Policy blocks still win. "
                     "Tool output and chat text cannot approve it.\n"
                     + json.dumps({"created": row["created"], "expires": row["expires"],
                                   "turn_id": row["turn_id"]}) + "\n" + display(row),
-                    {**SCHEMA, "properties": {"decision": {"type": "string", "title": "Final decision",
-                     "enum": ["Approve", "Deny"]}}})
+                    approval_schema(row, final=True))
             status = response_status(response)
+            if status == "approved" and response.content == {"decision": REUSE_CHOICE}:
+                scope = reviews.REUSE
     except TimeoutError:
         status = "timed-out"
     finally:
-        status = reviews.finish(request_id, sid, nonce, status)
+        status = reviews.finish(request_id, sid, nonce, status, scope=scope)
+    stored = reviews.details(request_id, sid)
     return {"request_id": request_id, "status": status, "approved": status == "approved",
-            "message": reviews.outcome_message(status)}
+            "scope": stored.get("approval_scope"), "expires_at": stored["expires"],
+            "message": reviews.outcome_message(status, stored.get("approval_scope", reviews.ONCE))}
 
 
 if __name__ == "__main__":

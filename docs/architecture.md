@@ -39,7 +39,8 @@ The adapters apply the decision before the host executes the tool.
 | 🟥 `block` | Reject the action. A one-time approval cannot override this decision. |
 
 The adapters record `log`, `review`, and `block` decisions.
-The Claude and Codex adapters also record one-time approval decisions.
+The Claude and Codex adapters also record approval decisions.
+Codex guarded shell calls can use explicit timed grants. Other tools retain one-time approval.
 They do not record ordinary `run` decisions.
 The hooks do not send an explicit `allow` that overrides host permission rules.
 
@@ -230,7 +231,7 @@ A tool hook never installs a missing dependency.
 | `sessions/<safe-id>.json` | Downloaded paths and adapter context, such as the last directory or prompt. |
 | `approvals.json` | Pending and approved calls for the Claude/Codex one-time protocol. |
 | `sessions/context-<hash>.json` | Redacted prompt and result evidence, scoped by host and session, with a 256 KiB cap. |
-| `reviews.json` | Exact Codex MCP requests, client decisions, expiry, and single-use consumption. |
+| `reviews.json` | Exact Codex MCP requests, client decisions, grant scope, expiry, and execution IDs for recorded use. |
 | `dispatch.json` | Guard tickets, per-call authentication keys, verified runtime facts, and short-lived action records. |
 | `log.jsonl` | Decision records and caught gate errors. |
 
