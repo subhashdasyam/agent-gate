@@ -8,7 +8,7 @@ These pages describe the current source and the planned work.
 
 The source directory uses the name `gate-v2.2`.
 The public repository uses the name `agent-gate`.
-The native plugin version in this branch is `0.2.4`.
+The native plugin version in this branch is `0.2.5`.
 
 The original use case was the ProjectDiscovery threat: a keyword-triggered model backdoor that transfers `.env` data through download-and-execute code.
 The gate examines the tool action rather than the model's explanation.
@@ -59,7 +59,7 @@ The agent can alter hooks or approval state through actions outside the gate's a
 | [`adapters/codex_hook.py`](../adapters/codex_hook.py) | Codex shell calls, patches, transcript recovery, and interactive-channel checks. |
 | [`adapters/common.py`](../adapters/common.py) | Hook errors, deadlines, modes, logs, state, approvals, and `--doctor`. |
 | [`adapters/context.py`](../adapters/context.py) | Bounded prompt and result evidence, provenance, deduplication, and redaction. |
-| [`adapters/reviews.py`](../adapters/reviews.py) | Exact Codex requests, expiry, locks, and single-use grants. |
+| [`adapters/reviews.py`](../adapters/reviews.py) | Exact Codex requests, expiry, locks, one-time grants, and explicit timed reuse. |
 | [`adapters/guard_dispatch.py`](../adapters/guard_dispatch.py) | Trusted hooks, authenticated guard facts, and execution tickets. |
 | [`adapters/execution_guard.py`](../adapters/execution_guard.py) | Runtime facts and guarded shell execution inside the host sandbox. |
 | [`adapters/platform_support.py`](../adapters/platform_support.py) | POSIX and Windows state locks and command argument quotes. |

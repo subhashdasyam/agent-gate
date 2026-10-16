@@ -538,7 +538,7 @@ class ApprovalTests(StateFixture, unittest.IsolatedAsyncioTestCase):
             R.finish(rid, "s1", nonce, status)
             with patch.object(C, "deny_exit", side_effect=RuntimeError) as deny:
                 with self.assertRaises(RuntimeError):
-                    CX.decide_mcp(self.verdict, "Bash", args, str(self.tmp), "s1", "t1", True)
+                    CX.decide_mcp(self.verdict, "Bash", args, str(self.tmp), "s1", "t1", True, "closed-" + status)
             message = deny.call_args.args[0]
             self.assertIn(status, message)
             self.assertEqual("codex -a" in message, status != "denied")
@@ -560,7 +560,7 @@ class ApprovalTests(StateFixture, unittest.IsolatedAsyncioTestCase):
         result = await self.M.request_review(rid, client)
         self.assertFalse(result["approved"])
         self.assertEqual(len(self.sent), 2)
-        self.assertEqual(self.sent[1][1]["properties"]["decision"]["enum"], ["Approve", "Deny"])
+        self.assertEqual(self.sent[1][1]["properties"]["decision"]["enum"], ["Approve once", "Deny"])
 
     async def test_unverified_metadata_or_auto_reviewer_cannot_approve(self):
         rid, _ = self.pending()

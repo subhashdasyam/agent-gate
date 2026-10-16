@@ -68,10 +68,11 @@ Keep state private. Select a trusted model endpoint before you enable Laya.
 3. For `review`, the adapter stores the complete action and returns a denial with its review ID.
 4. The agent calls `request_review(request_id)` on the bundled MCP server.
 5. The server checks the client session metadata. Automatic reviewers cannot issue a grant.
-6. If the client supports forms and permits prompts, Codex shows **Approve**, **Deny**, or **More information**.
-7. Only the exact client response `{"decision":"Approve"}` can mark the request approved.
-8. The agent retries the unchanged action. The gate checks policy again and consumes the grant atomically.
-9. A second use is denied. A new policy block also denies the action.
+6. If the client supports forms, Codex shows **Approve once**, **Deny**, and **More information**.
+7. Verified guarded shell calls also offer **Allow same action for 15 minutes**.
+8. Only an explicit client approval creates a grant with the selected scope.
+9. The gate checks policy again and records each authorized attempt under a lock.
+10. A one-time grant permits one attempt. A timed grant permits attempts with the approved scope until its deadline.
 
 For direct tools, the pre-tool adapter writes the review request.
 For guarded tools, the post-tool adapter writes the request after the facts check.
@@ -91,16 +92,48 @@ Transcript format is a host dependency, not a stable public schema.
 Code Mode and native Windows use a separate guarded execution contract.
 The guard reports the actual directory and environment before the original command runs.
 The trusted post-tool hook creates the request from authenticated facts.
-The trusted pre-tool hook consumes the grant before one execution attempt.
+The trusted pre-tool hook records grant use before each authorized execution attempt.
 
 The runtime guard then compares the actual facts with the grant scope.
 The guard never writes private state.
 Refer to [the execution guard](execution-guard.md) for the complete scope.
 
-Requests expire 15 minutes after creation. A retry does not extend the deadline.
+### Approval scope and reuse
+
+Unanswered requests expire 15 minutes after creation.
+Approved grants expire 15 minutes after the client approval.
+Repeat requests and repeated execution do not extend either deadline.
 The form has a 45-second total response deadline.
 More information opens one final form with grant scope and expiry details.
-It still requires an explicit Approve response.
+The final form still requires an explicit approval choice.
+
+**Approve once** permits one attempt, even if the command fails or the host sandbox refuses an operation.
+The old client response `{"decision":"Approve"}` still means one-time approval.
+Old grants without a scope field remain single-use.
+
+**Allow same action for 15 minutes** permits repeated same-scope shell calls across turns in this Codex session.
+The scope includes the command, actual directory, executor, environment fingerprint, project root, policy mode, and assessment features.
+Each new guarded operation needs a facts probe before execution.
+The runtime compares actual facts with the authorized scope before the original command starts.
+A changed scope requires fresh review. A policy block always wins.
+
+Direct tools and patches do not offer timed approval.
+
+A new invocation after a spent one-time grant can create a new review with a different ID.
+A new invocation after an approved grant expires also requires fresh review.
+The previous grant remains spent or expired. It never becomes a new grant.
+The gate rejects duplicate execution IDs and repeated receipts.
+Commands do not execute again automatically after failure.
+
+CAUTION: Examine the timed scope before approval.
+The same command can affect changed files, different Git commits, or changed remote resources.
+The grant does not certify script contents or every internal effect.
+Agent Gate approval does not grant host network access or remove sandbox restrictions.
+
+`request_review` retains its request-ID argument.
+Its final response includes `scope` and `expires_at`.
+The scope is `once` or `same_action_15m` for an approved grant.
+`review_details` exposes the scope, deadline, and recorded use count without new permission.
 
 Deny, decline, cancel, timeout, and invalid responses create no grant.
 Only an exact accepted **Deny** response records `denied` for a new review.
@@ -110,10 +143,11 @@ Missing form capability or a missing response channel records `review-unavailabl
 The recovery message explains how the user can enable interactive reviews without a full-access request.
 Refer to [Codex review forms](integrations.md#codex-review-forms) for the command and its limits.
 
-Closed requests cannot open another prompt for the same action in the same session.
+Denied, cancelled, unanswered expired, and unsuccessful form requests stay closed for the same action in this session.
 The agent must stop. It must not change the command to avoid the decision.
 
-The store keeps closed decisions to prevent repeat prompts.
+The store keeps closed decisions and the execution IDs for grant use.
+Each grant permits at most 1,000 recorded execution IDs. A full usage record stops authorization.
 It has no automatic cleanup. A trusted operator must maintain a full store outside the agent session.
 
 POSIX file locks and Windows byte-range locks prevent concurrent grant use.

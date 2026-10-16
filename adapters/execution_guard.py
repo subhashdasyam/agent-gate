@@ -70,6 +70,11 @@ def receipt(ticket, status, observed):
     print(PREFIX + body + ":" + mac, flush=True)
 
 
+def policy_binding(verdict):
+    policy = {key: verdict.get(key) for key in ("decision", "floor", "mode", "features", "why")}
+    return hashlib.sha256(json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def run(ticket):
     if ticket.get("contract") != CONTRACT or time.time() > ticket["expires"]:
         raise ValueError("Guard ticket is invalid or expired. No original command ran.")
@@ -81,7 +86,8 @@ def run(ticket):
         receipt(ticket, "mismatch", observed)
         return 2
     verdict = assess(ticket, observed, ticket["state"])
-    if verdict["decision"] == "block" or (verdict["decision"] == "review" and not ticket["reviewed"]):
+    if verdict["decision"] == "block" or (verdict["decision"] == "review" and not ticket["reviewed"]) \
+            or (ticket.get("assessment") is not None and ticket["assessment"] != policy_binding(verdict)):
         receipt(ticket, "blocked", observed)
         return 2
     receipt(ticket, "executing", observed)

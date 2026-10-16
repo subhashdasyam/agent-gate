@@ -185,10 +185,10 @@ def handle(p):
     if os.environ.get("GATE_APPROVAL_TRANSPORT") == "terminal":
         decide(v, tool, payload, run_cwd, bind_cwd, sid, mode, why_mode)
     else:
-        decide_mcp(v, bind_tool, actual_args, run_cwd, sid, p.get("turn_id"), cwd_known)
+        decide_mcp(v, bind_tool, actual_args, run_cwd, sid, p.get("turn_id"), cwd_known, p.get("tool_use_id"))
 
 
-def decide_mcp(v, tool, args, cwd, sid, turn_id, cwd_known):
+def decide_mcp(v, tool, args, cwd, sid, turn_id, cwd_known, attempt_id=None):
     dec = v["decision"]
     if dec in ("run", "log"):
         if dec == "log":
@@ -200,8 +200,10 @@ def decide_mcp(v, tool, args, cwd, sid, turn_id, cwd_known):
         C.deny_exit(reason + ". Blocked by policy; no grant can override this.")
     if args is None or not cwd_known:
         C.deny_exit(reason + ". Full tool arguments or directory are missing. No exact-action grant is possible.")
-    rid, status = R.pending("codex", sid, cwd, tool, args, v, turn_id)
-    if R.consume(rid, sid, R.binding("codex", sid, cwd, tool, args)):
+    if not isinstance(attempt_id, str) or not attempt_id:
+        C.deny_exit(reason + ". The host tool-call ID is missing. No exact-action grant is possible.")
+    rid, status = R.pending("codex", sid, cwd, tool, args, v, turn_id, attempt_id=attempt_id)
+    if R.consume(rid, sid, R.binding("codex", sid, cwd, tool, args), attempt_id=attempt_id):
         C.log({"harness": "codex", "session": sid, "tool": tool,
                "decision": "approved-once", "request_id": rid})
         return

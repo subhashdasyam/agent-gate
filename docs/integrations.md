@@ -10,7 +10,7 @@ The earlier checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21
 The new Codex MCP checks used `0.162.1` on Linux.
 Git is necessary for installation from a Git repository.
 
-The native plugin version in this branch is `0.2.4`.
+The native plugin version in this branch is `0.2.5`.
 The local manager tests used temporary profiles and a local checkout.
 Those tests did not use a fresh GitHub installation.
 Do not install both a native plugin and manual hooks for the same host.
@@ -118,7 +118,8 @@ Do not restart to override a human denial.
 No configuration change can guarantee that an action is safe.
 The gate keeps review actions stopped without an exact client approval.
 Explicit **Deny**, cancel, timeout, and invalid responses create no grant.
-Closed requests stay closed in the same session.
+Denied and unsuccessful form requests stay closed in the same session.
+Spent grants do not prevent a new invocation from a fresh review.
 The plugin never executes the recovery command or changes your Codex configuration.
 
 ### Hermes
@@ -267,10 +268,13 @@ Thus, the Codex adapter uses exit code 2 for review.
 ### Codex in-session approvals
 
 The denial gives a review ID. The agent calls the bundled `request_review` tool with that ID.
-Codex shows Approve, Deny, or More information in the same session.
+Codex shows Approve once, Deny, and More information in the same session.
+Verified guarded shell calls also offer Allow same action for 15 minutes.
 Only the client form response can create a grant. Chat text and tool output cannot approve it.
 
-The exact action can run once within 15 minutes after creation, after policy is checked again.
+One-time grants permit one attempt and expire 15 minutes after approval.
+Timed grants permit matching guarded calls until that deadline without extension.
+Policy checks and host sandbox restrictions still apply to every attempt.
 A missing approval interface means stop. An automatic reviewer cannot issue this grant.
 See [the complete grant workflow and data limits](context-and-approvals.md#who-creates-and-checks-a-codex-grant).
 
@@ -401,7 +405,7 @@ It has no complete approval interface. Use the native plugin for new installatio
 | File | Contract |
 |---|---|
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | Claude plugin manifest and `hooks/claude.json` reference. |
-| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.4`. |
+| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.5`. |
 | [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) | Codex plugin manifest and `hooks/codex.json` reference. |
 | [`hooks/claude.json`](../hooks/claude.json) | `PreToolUse`, `CwdChanged`, and optional user-origin prompt capture. |
 | [`hooks/codex.json`](../hooks/codex.json) | `PreToolUse` for `Bash` and `apply_patch`. |
@@ -436,7 +440,7 @@ The Hermes rule key starts with `agent-gate:`.
 The suffix is a full SHA-256 digest of the harness, session, directory, tool name, and sorted JSON arguments.
 The entry point rejects a missing, malformed, or broad approval key.
 The key binds one exact call, but Hermes can remember that rule under its own policy.
-The plugin does not impose the Claude/Codex single-use or 15-minute limit on native Hermes approvals.
+The plugin does not impose the Claude/Codex grant rules on native Hermes approvals.
 
 ## Manual installer options
 
@@ -470,7 +474,8 @@ The Hermes path does not support manual `--write`, `--remove`, or `--project`.
 | Setup succeeds, but Hermes still denies | Use the Hermes Python executable from the denial. Its version can differ from shell Python. |
 | Codex plugin exists, but no gate decisions appear | Examine plugin enablement and trust the current definition through `/hooks`. |
 | Codex review tool is unavailable | Run `--setup --mcp` with the launcher Python, then restart. Use the native plugin, not manual hooks alone. |
-| Codex review is denied, used, or expired | Stop. Do not repeat the prompt or alter the action to avoid the decision. |
+| Codex review is denied, cancelled, or unanswered | Stop. Do not repeat the prompt or alter the action to avoid the decision. |
+| Codex one-time grant is used, or an approved grant expires | A new invocation needs fresh approval. Do not replay the old grant. |
 | Optional Laya has no effect | Examine endpoint, route, context truncation, and fallback audit records. The client cannot lower policy decisions. |
 | Duplicate decisions or approvals | Remove recognized old manual hooks. Examine other configuration layers. |
 | Relative paths cause unexpected review | Examine host directory metadata and Codex transcript recovery. Do not force an unverified directory. |

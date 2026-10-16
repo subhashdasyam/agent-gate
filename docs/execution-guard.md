@@ -19,6 +19,7 @@ It does not parse JavaScript, guess PATH from shell configuration, or trust anot
 | Directory | The canonical directory from the actual tool process. |
 | Executor | An absolute Bash path on Linux and macOS, or a PowerShell path on native Windows. |
 | Environment | A SHA-256 fingerprint of the effective child environment. No environment values enter the approval form. |
+| Policy | Project root, policy mode, and assessment features. A changed scope needs fresh review. |
 | Startup files | The child executor does not load shell profiles. The guard removes Bash startup variables and exported functions. |
 | Stdin | The child receives closed input through `DEVNULL`. |
 
@@ -26,6 +27,7 @@ The guard sets `PWD` to the actual canonical directory.
 It removes `OLDPWD`, `SHLVL`, and `_` from the child environment.
 It also removes `CODEX_TOOL_CALL_ID`, which changes for each Codex tool call.
 The child does not receive this metadata, so a new tool-call ID does not invalidate an unchanged retry.
+
 The fingerprint includes every effective child environment value.
 Changes to `PATH`, `PYTHONPATH`, and other retained variables still invalidate the execution ticket.
 The effective environment excludes `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `SHELLOPTS`, `BASHOPTS`, and exported Bash functions.
@@ -47,16 +49,16 @@ CMD and custom shell semantics are not supported guarded executors.
 7. The hook applies deterministic policy and optional Laya advice to the verified facts.
 8. For `review`, the MCP server asks the user in the same session.
 9. The agent retries the unchanged command after permission.
-10. The pre-tool hook checks policy again and consumes one review grant under a lock.
+10. The pre-tool hook checks policy again and records one authorized attempt under a lock.
 11. The guard compares the actual directory, executor, and environment with the ticket scope.
 12. The guard checks deterministic policy again before the child command starts.
 
 For `run` or `log`, the first facts check needs no human approval.
 The agent still retries the unchanged command once.
-The hook can reuse fresh verified facts for later policy-permitted calls.
+Each later operation starts with a new facts probe.
 
 A mismatch stops the original command and reports new facts for another policy check.
-An approved attempt with a mismatch still consumes its grant.
+An approved attempt with a mismatch still spends a one-time grant.
 The grant cannot transfer to the new directory or environment.
 
 The MCP server alone records human approval.
@@ -99,7 +101,12 @@ Missing, forged, stale, ambiguous, or repeated receipts create no permission.
 
 Each execution ticket expires after 60 seconds.
 Verified facts expire after 15 minutes.
-Human reviews retain their separate 15-minute expiry and single-use rule.
+Unanswered requests expire 15 minutes after creation.
+Approved grants expire 15 minutes after approval.
+
+One-time grants permit one attempt. Explicit timed grants permit same-scope attempts until expiry without an extended deadline.
+Execution tickets cannot outlive the approved grant.
+
 The dispatcher permits at most 1,000 call records and 1,000 action records.
 The guard permits at most 24 KiB for the encoded command ticket.
 Oversize actions stop instead of truncation.
@@ -107,7 +114,9 @@ Oversize actions stop instead of truncation.
 JSON state uses atomic replacement under a stable sidecar lock.
 The lock covers the complete read, update, and publication.
 A lock timeout, corrupt store, or missing lock backend stops the operation.
-State migration is not necessary, but old processes must stop before the lock protocol changes.
+
+Legacy approvals remain single-use. Legacy terminal decisions do not become timed grants.
+Stop old host processes before an upgrade. The gate does not reset approval history.
 
 ## Security limits
 

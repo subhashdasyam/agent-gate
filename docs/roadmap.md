@@ -38,6 +38,8 @@ A one-time approval permits only an exact retry through the gate.
 - [x] Keep context bounded and mark missing IDs and truncated data.
 - [x] Bundle a Codex stdio MCP server with client-session checks and native approval forms.
 - [x] Bind Codex grants to all arguments, the actual tool, directory, and session. Apply expiry and atomic single-use consumption.
+- [x] Add explicit timed approval for guarded Codex shell calls. Keep one-time approval and prevent a session-long spent-command lockout.
+- [ ] Validate the new timed choice through native Codex forms on each supported OS.
 - [x] Keep Claude and Hermes native approvals. Keep legacy terminal approval as an explicit Codex option.
 - [x] Add guarded Code Mode execution without disable flags. Bind actual runtime facts before the original command runs.
 - [x] Add Windows state locks and a native PowerShell guard. Add the Linux, macOS, and Windows CI matrix.

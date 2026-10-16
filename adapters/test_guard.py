@@ -53,11 +53,11 @@ class GuardTests(unittest.TestCase):
         self.state.stop()
         self.scratch.cleanup()
 
-    def prepare(self, command=None, sid="s1"):
-        p = {"tool_name": "Bash", "session_id": sid, "tool_use_id": "exec-" + str(uuid.uuid4()),
-             "turn_id": "t1", "tool_input": {"command": command or self.command}}
+    def prepare(self, command=None, sid="s1", mode="strict", call_id=None, turn_id="t1"):
+        p = {"tool_name": "Bash", "session_id": sid, "tool_use_id": call_id or "exec-" + str(uuid.uuid4()),
+             "turn_id": turn_id, "tool_input": {"command": command or self.command}}
         with contextlib.redirect_stdout(io.StringIO()) as stdout:
-            D.prepare(p, p["tool_input"]["command"], str(self.project), "strict")
+            D.prepare(p, p["tool_input"]["command"], str(self.project), mode)
         output = json.loads(stdout.getvalue())["hookSpecificOutput"]
         self.assertEqual(output["permissionDecision"], "allow")
         self.assertIn("execution_guard.py", output["updatedInput"]["command"])
@@ -82,12 +82,13 @@ class GuardTests(unittest.TestCase):
             self.collect(p, result)
         return p, ticket, result
 
-    def approve(self):
+    def approve(self, scope="once"):
         rows = json.loads((Path(self.state_dir) / "reviews.json").read_text())
-        self.assertEqual(len(rows), 1)
-        rid = next(iter(rows))
+        pending = [rid for rid, row in rows.items() if row["status"] == "pending"]
+        self.assertEqual(len(pending), 1)
+        rid = pending[0]
         nonce, row = R.claim(rid, "s1")
-        R.finish(rid, "s1", nonce, "approved")
+        R.finish(rid, "s1", nonce, "approved", scope=scope)
         return rid, row
 
     def test_probe_never_runs_original_and_records_actual_directory(self):
@@ -130,7 +131,7 @@ class GuardTests(unittest.TestCase):
         observed = {"command": "Get-Content " + self.state_dir, "cwd": str(self.project)}
         self.assertEqual(E.assess(ticket, observed, {})["decision"], "block")
 
-    def test_review_grant_is_spent_before_one_attempt_and_reuse_stops(self):
+    def test_review_grant_is_spent_and_new_operation_gets_fresh_review(self):
         command = self.command if os.name == "nt" else "python3 -c 'open(\"proof\",\"w\").write(\"marker\")'"
         self.probe(command)
         with self.assertRaises(Refused):
@@ -142,8 +143,13 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(self.collect(p, result))
         self.assertTrue((self.project / "proof").exists())
+        p2, ticket2 = self.prepare(command)
+        self.assertIsNone(ticket2["expected"])
         with self.assertRaises(Refused):
-            self.prepare(command)
+            self.collect(p2, self.runtime(ticket2))
+        rows = json.loads((Path(self.state_dir) / "reviews.json").read_text())
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[rid]["status"], "used")
 
     def test_directory_mismatch_never_runs_original(self):
         self.probe()
@@ -194,9 +200,11 @@ class GuardTests(unittest.TestCase):
         expected = "marker" if os.name == "nt" else "None"
         self.assertEqual((self.project / "proof").read_text().strip(), expected)
         self.assertEqual(R.details(rid, "s1")["status"], "used")
+        p2, ticket2 = self.prepare(command)
+        self.assertIsNone(ticket2["expected"])
         with self.assertRaises(Refused):
-            self.prepare(command)
-        self.assertEqual(len(json.loads((Path(self.state_dir) / "reviews.json").read_text())), 1)
+            self.collect(p2, self.runtime(ticket2))
+        self.assertEqual(len(json.loads((Path(self.state_dir) / "reviews.json").read_text())), 2)
 
     def test_call_id_is_removed_but_meaningful_environment_remains_bound(self):
         _, ticket = self.prepare()
@@ -208,6 +216,95 @@ class GuardTests(unittest.TestCase):
         for key in ("PATH", "PYTHONPATH", "AGENT_GATE_TEST_VALUE"):
             with self.subTest(key=key), patch.dict(os.environ, {key: "synthetic-environment-change"}):
                 self.assertNotEqual(first["environment_sha256"], E.facts(ticket)["environment_sha256"])
+
+    def test_timed_grant_runs_twice_only_after_fresh_runtime_probes(self):
+        command = ("Add-Content -LiteralPath proof -Value marker" if os.name == "nt" else
+                   "python3 -c 'open(\"proof\",\"a\").write(\"marker\\n\")'")
+        self.probe(command)
+        rid, _ = self.approve(R.REUSE)
+        for index in range(2):
+            if index:
+                p, ticket = self.prepare(command, turn_id="next-user-turn")
+                self.assertIsNone(ticket["expected"])
+                result = self.runtime(ticket)
+                with self.assertRaises(Refused):
+                    self.collect(p, result)
+                self.assertIn("No human approval is needed", C.deny_exit.call_args.args[0])
+            p, ticket = self.prepare(command)
+            self.assertTrue(ticket["reviewed"])
+            self.assertLessEqual(ticket["expires"], R.details(rid, "s1")["expires"])
+            result = self.runtime(ticket)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(self.collect(p, result))
+        self.assertEqual((self.project / "proof").read_text().splitlines(), ["marker", "marker"])
+        self.assertEqual(R.details(rid, "s1")["uses"], 2)
+        self.assertEqual(len(json.loads((Path(self.state_dir) / "reviews.json").read_text())), 1)
+
+    def _assert_timed_scope_change(self, change_environment=False):
+        command = self.command if os.name == "nt" else "python3 -c 'print(1)'"
+        self.probe(command)
+        rid, _ = self.approve(R.REUSE)
+        p, ticket = self.prepare(command)
+        self.assertTrue(self.collect(p, self.runtime(ticket)))
+        other = self.tmp / "other"
+        other.mkdir()
+        p, ticket = self.prepare(command)
+        self.assertIsNone(ticket["expected"])
+        result = self.runtime(ticket, cwd=self.project if change_environment else other,
+                              **({"AGENT_GATE_TEST_VALUE": "changed"} if change_environment else {}))
+        with self.assertRaises(Refused):
+            self.collect(p, result)
+        self.assertIn("Review ID:", C.deny_exit.call_args.args[0])
+        self.assertEqual(R.details(rid, "s1")["uses"], 1)
+        self.assertFalse((other / "proof").exists())
+
+    def test_timed_grant_cannot_follow_another_directory(self):
+        self._assert_timed_scope_change()
+
+    def test_timed_grant_cannot_follow_another_environment(self):
+        self._assert_timed_scope_change(change_environment=True)
+
+    def test_duplicate_host_call_does_not_spend_or_reuse_a_grant(self):
+        command = self.command if os.name == "nt" else "python3 -c 'print(1)'"
+        self.probe(command)
+        rid, _ = self.approve(R.REUSE)
+        p, ticket = self.prepare(command, call_id="same-host-call")
+        self.assertEqual(R.details(rid, "s1")["uses"], 1)
+        with self.assertRaises(Refused):
+            self.prepare(command, call_id="same-host-call")
+        self.assertEqual(R.details(rid, "s1")["uses"], 1)
+        result = self.runtime(ticket)
+        self.assertTrue(self.collect(p, result))
+        with self.assertRaises(Refused):
+            self.collect(p, result)
+
+    def test_runtime_policy_change_stops_even_a_timed_grant(self):
+        command = self.command if os.name == "nt" else "python3 -c 'print(1)'"
+        self.probe(command)
+        self.approve(R.REUSE)
+        _, ticket = self.prepare(command)
+        for verdict in ({"decision": "block", "why": ["gate_tamper"]},
+                        {"decision": "review", "why": ["changed-assessment"]}):
+            with patch.object(E, "facts", return_value=ticket["expected"]), \
+                    patch.object(E, "assess", return_value=verdict), patch.object(E.subprocess, "run") as run:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(E.run(ticket), 2)
+                run.assert_not_called()
+
+    def test_failed_approved_command_is_not_retried_or_refunded(self):
+        command = "exit 23" if os.name == "nt" else "python3 -c 'raise SystemExit(23)'"
+        self.probe(command)
+        rid, _ = self.approve()
+        p, ticket = self.prepare(command)
+        result = self.runtime(ticket)
+        self.assertEqual(result.returncode, 23)
+        self.assertTrue(self.collect(p, result))
+        self.assertEqual(R.details(rid, "s1")["status"], "used")
+        p, ticket = self.prepare(command)
+        self.assertIsNone(ticket["expected"])
+        with self.assertRaises(Refused):
+            self.collect(p, self.runtime(ticket))
+        self.assertIn("Review ID:", C.deny_exit.call_args.args[0])
 
     def test_volatile_environment_is_controlled_not_just_ignored(self):
         with patch.dict(os.environ, {"BASH_ENV": "untrusted.sh", "OLDPWD": "/different",
