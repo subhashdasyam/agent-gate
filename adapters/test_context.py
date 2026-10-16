@@ -52,19 +52,21 @@ class StateFixture(unittest.TestCase):
 class StateTests(StateFixture):
     def test_all_host_adapters_distinguish_mentions_from_executed_controls(self):
         adapters = Path(__file__).resolve().parent
-        env = {**os.environ, "HOME": str(self.tmp), "GATE_STATE_DIR": str(self.tmp / "state"),
+        env = {**os.environ, "HOME": str(self.tmp), "USERPROFILE": str(self.tmp),
+               "GATE_STATE_DIR": str(self.tmp / "state"),
                "GATE_MODE": "strict", "GATE_SELF_PROTECT": "0", "GATE_PROTECT": str(adapters),
                "CLAUDE_PROJECT_DIR": str(self.tmp)}
         for host, script in (("claude", "claude_code_hook.py"), ("codex", "codex_hook.py"),
                              ("hermes", "hermes_gated.py")):
-            for command, blocked in (("printf agent-gate", False), ("rg agent-gate README.md", False),
-                                     ("python3 -I adapters/bootstrap.py approve abc", True),
-                                     ("codex plugin remove agent-gate", True)):
+            commands = (("printf agent-gate", False), ("rg agent-gate README.md", False),
+                        ("python3 -I adapters/bootstrap.py approve abc", True),
+                        ("codex plugin remove agent-gate", True))
+            for call_id, (command, blocked) in enumerate(commands):
                 with self.subTest(host=host, command=command):
                     payload = {"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": str(self.tmp),
                                "root": str(self.tmp), "cwd_known": True, "backend": "local",
                                "tool_name": "terminal" if host == "hermes" else "Bash",
-                               "tool_input": {"command": command}, "tool_use_id": "c1"}
+                               "tool_input": {"command": command}, "tool_use_id": f"{host}-{call_id}"}
                     result = subprocess.run([sys.executable, "-B", str(adapters / script)],
                         input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=20)
                     if host == "hermes":
@@ -73,7 +75,12 @@ class StateTests(StateFixture):
                         self.assertEqual(directive["action"] if directive else None, "block" if blocked else None)
                     else:
                         self.assertEqual(result.returncode, 2 if blocked else 0, result.stderr)
-                        self.assertEqual(result.stdout, "")
+                        if host == "codex" and os.name == "nt" and not blocked:
+                            output = json.loads(result.stdout)["hookSpecificOutput"]
+                            self.assertEqual(output["permissionDecision"], "allow")
+                            self.assertIn("execution_guard.py", output["updatedInput"]["command"])
+                        else:
+                            self.assertEqual(result.stdout, "")
 
     def test_project_name_in_read_only_command_is_not_self_approval(self):
         gate = C.load_gate()
@@ -91,7 +98,7 @@ class StateTests(StateFixture):
                         "claude plugin disable agent-gate", "hermes plugins disable agent-gate",
                         "bash -c 'codex plugin remove agent-gate'",
                         "codex plugin remove \"$UNKNOWN_PLUGIN\"",
-                        f"printf '{{}}' > {self.tmp}/state/reviews.json"):
+                        f"printf '{{}}' > '{(self.tmp / 'state' / 'reviews.json').as_posix()}'"):
             with self.subTest(command=command):
                 self.assertEqual(gate.gate(command, str(self.tmp), "agent", mode="strict")["decision"], "block")
 

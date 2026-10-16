@@ -4,7 +4,9 @@ import errno
 import io
 import json
 import multiprocessing
+import ntpath
 import os
+import posixpath
 import shlex
 from pathlib import Path
 import subprocess
@@ -29,6 +31,56 @@ class Refused(Exception):
 def spend(state_dir, rid, sha, result):
     C.STATE_DIR = state_dir
     result.put(R.consume(rid, "s1", sha))
+
+
+class PortablePathTests(unittest.TestCase):
+    def test_native_file_tools_distinguish_project_and_protected_writes(self):
+        gate = C.load_gate()
+        with tempfile.TemporaryDirectory(prefix="gate-paths-") as scratch:
+            project = Path(scratch) / "project with spaces"
+            project.mkdir()
+            protected = Path(scratch) / "private-state"
+            with patch.object(gate, "_extra_protected", return_value=[str(protected)]):
+                self.assertEqual(gate.check_write("src/a.py", str(project), content="x=1\n")["decision"], "run")
+                self.assertEqual(gate.check_write(str(protected / "reviews.json"), str(project),
+                                                 content="{}")["decision"], "block")
+
+    def test_path_boundaries_use_native_separators(self):
+        gate = C.load_gate()
+        for paths, root in ((posixpath, "/work/project"), (ntpath, r"C:\work\project")):
+            with self.subTest(paths=paths.__name__), patch.object(gate.os, "path", paths):
+                self.assertEqual(gate._classify_abs(root, root), "cwdroot")
+                self.assertEqual(gate._classify_abs(paths.join(root, "src", "a.py"), root), "cwd")
+                self.assertEqual(gate._classify_abs(root + "-other/a.py", root), "system")
+                self.assertEqual(gate._classify_abs(paths.join(root, "..", "a.py"), root), "system")
+                if paths is ntpath:
+                    self.assertEqual(gate._classify_abs(r"c:/WORK/project/src/a.py", root), "cwd")
+                    self.assertEqual(gate._classify_abs(r"D:\work\project\a.py", root), "system")
+
+    def test_protection_and_config_components_use_native_separators(self):
+        gate = C.load_gate()
+        for paths, root in ((posixpath, "/work/private"), (ntpath, r"C:\work\private")):
+            with self.subTest(paths=paths.__name__), patch.object(gate.os, "path", paths), \
+                    patch.object(gate, "_extra_protected", return_value=[root]), \
+                    patch.object(gate, "_real", side_effect=lambda p: p):
+                self.assertTrue(gate.in_protected(paths.join(root, "reviews.json")))
+                self.assertTrue(gate.in_protected(paths.join(root, "nested", "..", "reviews.json")))
+                self.assertFalse(gate.in_protected(root + "-other/reviews.json"))
+                self.assertFalse(gate.in_protected(paths.join(root, "..", "other", "reviews.json")))
+                self.assertFalse(gate.in_protected("reviews.json"))
+                self.assertTrue(gate.is_config_path(paths.join(root, ".codex", "config.toml")))
+                self.assertTrue(gate.is_persist_path(paths.join(root, ".git", "hooks", "pre-commit")))
+                self.assertTrue(gate._is_git_history(paths.join(root, ".git", "HEAD")))
+                if paths is ntpath:
+                    self.assertTrue(gate.in_protected("c:/WORK/private/reviews.json"))
+                    self.assertEqual(gate._classify_abs(r"\\server\share\project\a.py",
+                                                       r"\\server\share\project"), "cwd")
+
+    def test_posix_backslash_is_a_filename_character(self):
+        gate = C.load_gate()
+        with patch.object(gate.os, "path", posixpath):
+            self.assertFalse(gate.is_config_path(r"/work/.codex\config.toml"))
+            self.assertEqual(gate._parts(r"/work/name\part"), ["work", r"name\part"])
 
 
 class GuardTests(unittest.TestCase):
