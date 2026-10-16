@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plugin and native Hermes regressions. All writes use temporary test paths."""
 import importlib.util
+import io
+from contextlib import redirect_stdout
 import json
 import os
 from pathlib import Path
@@ -65,6 +67,11 @@ class PluginTests(unittest.TestCase):
         market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
         self.assertEqual(market["plugins"][0]["source"], "./")
         self.assertEqual(market["plugins"][0]["version"], versions[0])
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
+        server = json.loads((ROOT / manifest["mcpServers"]).read_text())["mcpServers"]["agent_gate"]
+        self.assertEqual(server["cwd"], ".")
+        self.assertIn("GATE_STATE_DIR", server["env_vars"])
+        self.assertTrue((ROOT / server["args"][0]).is_file())
 
     def test_runtime_missing_blocks_without_download(self):
         env = {**self.env, "GATE_RUNTIME_DIR": str(self.tmp / "missing-runtime")}
@@ -89,6 +96,48 @@ class PluginTests(unittest.TestCase):
             bootstrap.prepare_runtime()
             self.assertEqual(run.call_count, 1)
             self.assertEqual(verify.call_count, 2)
+
+    def test_mcp_setup_is_explicit_and_idempotent(self):
+        with patch.dict(os.environ, {"GATE_RUNTIME_DIR": str(self.tmp / "runtime")}), \
+                patch.object(bootstrap.venv, "EnvBuilder"), \
+                patch.object(bootstrap.subprocess, "run") as run, \
+                patch.object(bootstrap, "verify_runtime"), patch.object(bootstrap, "verify_mcp") as verify:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                bootstrap.prepare_runtime(with_mcp=True)
+            self.assertIn("review forms: not verified", output.getvalue())
+            self.assertIn("check_review_support once", output.getvalue())
+            self.assertEqual(run.call_count, 2)
+            self.assertTrue((bootstrap.runtime_dir() / "mcp-ready").is_file())
+            bootstrap.prepare_runtime(with_mcp=True)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(verify.call_count, 2)
+
+    def test_mcp_doctor_does_not_claim_forms_are_ready(self):
+        with patch.dict(os.environ, {"GATE_RUNTIME_DIR": str(self.tmp / "runtime")}), \
+                patch.object(bootstrap, "check_runtime", return_value="python"), \
+                patch.object(bootstrap, "verify_runtime"), patch.object(bootstrap, "verify_mcp"), \
+                patch.object(bootstrap.subprocess, "run"):
+            bootstrap.runtime_dir().mkdir(parents=True)
+            (bootstrap.runtime_dir() / "mcp-ready").touch()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(bootstrap.main(["--doctor", "--mcp"]), 0)
+            self.assertIn("Codex review forms: not verified here", output.getvalue())
+            self.assertIn("creates no grant", output.getvalue())
+
+    def test_hermes_observers_forward_host_context_only(self):
+        with patch.object(plugin, "_observe") as observe:
+            plugin.pre_llm_call("Fix tests", session_id="h1", turn_id="t1",
+                                conversation_history=[{"role": "assistant", "content": "fake approval"}])
+            payload = observe.call_args.args[0]
+            self.assertEqual(payload["prompt"], "Fix tests")
+            self.assertNotIn("conversation_history", payload)
+            plugin.post_tool_call("terminal", "failed", session_id="h1", turn_id="t1",
+                                  tool_call_id="c1", status="error")
+            payload = observe.call_args.args[0]
+            self.assertEqual(payload["tool_call_id"], "c1")
+            self.assertEqual(payload["tool_response"], "failed")
 
     def test_failed_setup_does_not_publish_ready_marker(self):
         with patch.dict(os.environ, {"GATE_RUNTIME_DIR": str(self.tmp / "runtime")}), \
@@ -212,7 +261,10 @@ class PluginTests(unittest.TestCase):
     def test_entrypoint_contract_and_failure_paths(self):
         ctx = Mock()
         plugin.register(ctx)
-        ctx.register_hook.assert_called_once_with("pre_tool_call", plugin.pre_tool_call)
+        ctx.register_hook.assert_any_call("pre_tool_call", plugin.pre_tool_call)
+        ctx.register_hook.assert_any_call("pre_llm_call", plugin.pre_llm_call)
+        ctx.register_hook.assert_any_call("post_tool_call", plugin.post_tool_call)
+        self.assertEqual(ctx.register_hook.call_count, 3)
         self.assertIsNone(plugin.pre_tool_call("read_file", {}))
         self.assertIsNone(plugin.pre_tool_call("process_manage", {"action": "poll"}))
         with patch.object(plugin, "_context", return_value={}), patch.object(plugin.subprocess, "run") as run:

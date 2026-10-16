@@ -36,6 +36,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import context as CT
+import laya_client as L
 
 SHELL_TOOLS = {"Bash", "Monitor"}
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -123,13 +125,9 @@ def pre_tool_use(p):
             if not isinstance(cmd, str) or not cmd.strip():
                 return
             payload = json.dumps(ti, sort_keys=True)   # binds dangerouslyDisableSandbox too
-            if C.SELF_APPROVAL_RE.search(cmd):
-                v = {"decision": "block", "why": ["gate_tamper"],
-                     "detail": {"gate_tamper": "agents may not touch agent-gate approvals/state"}}
-            else:
-                mode, why_mode = C.claude_mode(project, ti, cmd)
-                v = G.gate(cmd, cwd, _origin(cmd, st, p), agent="claude", mode=mode,
-                           state=st, root=project, cwd_known=cwd_known)
+            mode, why_mode = C.claude_mode(project, ti, cmd)
+            v = G.gate(cmd, cwd, _origin(cmd, st, p), agent="claude", mode=mode,
+                       state=st, root=project, cwd_known=cwd_known)
         elif tool == "PowerShell":
             payload = str(ti.get("command"))
             v = {"decision": "review", "why": ["degraded"],
@@ -139,6 +137,7 @@ def pre_tool_use(p):
             v = _file_tool(G, tool, ti, cwd, project)
         else:
             return
+    v = L.advise(v, "claude", sid, tool, ti, cwd, project, mode, cwd_known)
     decide(v, tool, payload, cwd, pmode, sid, mode, why_mode)
 
 
@@ -175,6 +174,7 @@ def decide(v, tool, payload, cwd, pmode, sid, mode, why_mode):
 
 
 def handle(p):
+    CT.capture("claude", p)
     ev = p.get("hook_event_name")
     if ev == "PreToolUse":
         pre_tool_use(p)

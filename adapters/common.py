@@ -10,7 +10,8 @@ produce a well-formed verdict on every path:
     deadline becomes a DENY (exit 2 + non-empty stderr reason, the one form
     both harnesses honour without parsing JSON).
   - verdicts are only ever tightened: run/log -> no output (the harness's own
-    permission flow continues); we never emit "allow".
+    permission flow continues). The Codex guard emits "allow" only with a
+    replacement command that checks the actual execution context.
 
 State lives in $GATE_STATE_DIR (default ~/.local/state/agent-gate), which the
 gate itself protects from agent writes:
@@ -24,13 +25,17 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import signal
 import sys
+import tempfile
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import platform_support as P
+
 GATE_ROOT = os.path.dirname(HERE)
 if GATE_ROOT not in sys.path:
     sys.path.insert(0, GATE_ROOT)
@@ -40,13 +45,6 @@ STATE_DIR = os.path.normpath(os.environ.get("GATE_STATE_DIR") or os.path.join(
 DEADLINE_S = float(os.environ.get("GATE_DEADLINE_S", "8"))
 APPROVAL_TTL_S = 15 * 60
 SEV = {"run": 0, "log": 1, "review": 2, "block": 3}
-SELF_APPROVAL_RE = re.compile(r"gate[_-]approve|agent-gate", re.I)
-
-try:
-    import fcntl  # POSIX advisory locks; on Windows we run unlocked
-except ImportError:  # pragma: no cover
-    fcntl = None
-
 
 class GateTimeout(Exception):
     pass
@@ -65,8 +63,17 @@ def deny_exit(reason):
 
 @contextlib.contextmanager
 def deadline(seconds):
-    if not hasattr(signal, "SIGALRM") or seconds <= 0:
+    if seconds <= 0:
         yield
+        return
+    if not hasattr(signal, "SIGALRM"):
+        timer = threading.Timer(seconds, lambda: deny_exit("agent-gate: internal hook deadline exceeded."))
+        timer.daemon = True
+        timer.start()
+        try:
+            yield
+        finally:
+            timer.cancel()
         return
 
     def _boom(*_):
@@ -106,26 +113,37 @@ def _ensure_dir():
 
 
 @contextlib.contextmanager
-def _locked_json(path, default):
-    """Read-modify-write a JSON file under an exclusive lock."""
+def _locked_json(path, default, strict=False):
+    """Publish JSON atomically under a POSIX or Windows exclusive lock."""
     _ensure_dir()
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "r+", encoding="utf-8") as fh:
-        if fcntl:
-            fcntl.flock(fh, fcntl.LOCK_EX)
+    with P.file_lock(path + ".lock"):
         try:
-            text = fh.read()
-            try:
-                data = json.loads(text) if text.strip() else default
-            except ValueError:
-                data = default
-            yield data
-            fh.seek(0)
-            fh.truncate()
-            json.dump(data, fh)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except FileNotFoundError:
+            text = None
+        try:
+            data = json.loads(text) if text is not None and (strict or text.strip()) else default
+        except ValueError:
+            if strict:
+                condition = "empty" if text == "" else "invalid JSON"
+                raise ValueError(f"State is corrupt: {os.path.basename(path)} is {condition}. "
+                                 "Stop and ask the operator to inspect it.") from None
+            data = default
+        yield data
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=os.path.dirname(path),
+                                             prefix=".gate-state-", delete=False) as fh:
+                tmp = fh.name
+                os.chmod(tmp, 0o600)
+                json.dump(data, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
         finally:
-            if fcntl:
-                fcntl.flock(fh, fcntl.LOCK_UN)
+            if tmp and os.path.exists(tmp):
+                os.unlink(tmp)
 
 
 def session_path(session_id):
@@ -335,7 +353,7 @@ def load_gate():
 
 
 def approval_command():
-    return shlex.join([sys.executable, os.path.join(HERE, "gate_approve.py")])
+    return P.command([sys.executable, os.path.join(HERE, "gate_approve.py")])
 
 
 if __name__ == "__main__" and "--doctor" in sys.argv:

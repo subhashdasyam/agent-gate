@@ -27,8 +27,9 @@ def pre_tool_call(tool_name="", args=None, task_id="", session_id="", **kwargs):
     if tool_name == "process_manage" and isinstance(args, dict) and args.get("action") in ("list", "poll", "log", "wait", "kill", "close", "handoff"):
         return None
     try:
-        payload = {"tool_name": tool_name, "tool_input": args,
+        payload = {"hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": args,
                    "session_id": session_id or task_id,
+                   "turn_id": kwargs.get("turn_id"), "tool_call_id": kwargs.get("tool_call_id"),
                    **_context(task_id or session_id or "default", tool_name)}
         result = subprocess.run([sys.executable, "-I", str(ROOT / "adapters" / "bootstrap.py"), "hermes"],
                                 input=json.dumps(payload), capture_output=True, text=True, timeout=25)
@@ -49,5 +50,34 @@ def pre_tool_call(tool_name="", args=None, task_id="", session_id="", **kwargs):
         return {"action": "block", "message": f"agent-gate runtime error: {str(exc)[:1200]}"}
 
 
+def _observe(payload):
+    try:
+        subprocess.run([sys.executable, "-I", str(ROOT / "adapters" / "bootstrap.py"), "hermes"],
+                       input=json.dumps(payload), capture_output=True, text=True, timeout=10,
+                       check=True)
+    except (Exception, KeyboardInterrupt):
+        # Observer failures cannot authorize a tool. The policy still runs before execution.
+        return None
+
+
+def pre_llm_call(user_message="", session_id="", task_id="", turn_id="", **kwargs):
+    if isinstance(user_message, list):
+        user_message = "\n".join(part["text"] for part in user_message if isinstance(part, dict)
+                                 and part.get("type") == "text" and isinstance(part.get("text"), str))
+    _observe({"hook_event_name": "UserPromptSubmit", "prompt": user_message,
+              "session_id": session_id or task_id, "turn_id": turn_id,
+              "parent_session_id": kwargs.get("parent_session_id"),
+              "automated": kwargs.get("automated", False)})
+
+
+def post_tool_call(tool_name="", result=None, session_id="", task_id="", turn_id="", **kwargs):
+    _observe({"hook_event_name": "PostToolUse", "tool_name": tool_name,
+              "tool_response": result, "session_id": session_id or task_id,
+              "turn_id": turn_id, "tool_call_id": kwargs.get("tool_call_id"),
+              "status": kwargs.get("status"), "error": kwargs.get("error_message")})
+
+
 def register(ctx):
     ctx.register_hook("pre_tool_call", pre_tool_call)
+    ctx.register_hook("pre_llm_call", pre_llm_call)
+    ctx.register_hook("post_tool_call", post_tool_call)

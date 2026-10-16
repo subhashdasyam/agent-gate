@@ -1,6 +1,7 @@
 {
   "name": "agent-gate",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "Check shell commands and patches before Codex executes them.",
-  "hooks": "./hooks/codex.json"
+  "hooks": "./hooks/codex.json",
+  "mcpServers": "./.codex-plugin/.mcp.json"
 }

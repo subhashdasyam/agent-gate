@@ -123,7 +123,7 @@ stdin_command_channel(cmd, cwd, home=None)
 
 The direct Python API is not a schema-validation boundary.
 Callers must validate types, origin, mode, and confidence.
-The future Laya adapter must validate a numeric confidence range before the merge.
+The optional Laya adapter validates its numeric confidence range before it applies advice.
 An invalid confidence type can cause a direct caller error.
 
 ## Result contracts
@@ -162,9 +162,12 @@ The confidence threshold is `0.40`.
 | `log` | `run` and missing or lower confidence. | Keep `log`. |
 | `review` or `block` | Lower severity. | Keep the floor. |
 
-No installed adapter supplies model input.
-Laya has no client or service configuration in this repository.
-Refer to the [Laya roadmap](roadmap.md#laya-connect-the-optional-decision-layer).
+This table describes the legacy direct Python API, not the installed Laya path.
+Installed adapters use `laya_client.advise()` after deterministic analysis.
+That client never lowers severity or grants permission. This rule also protects `log`.
+
+It works for command, file, and patch verdicts. Their core API signatures stay the same.
+Refer to the [Laya configuration and wire contract](context-and-approvals.md#optional-laya-advice).
 
 ## Interactive command channels
 

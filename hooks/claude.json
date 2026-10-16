@@ -8,6 +8,12 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}]}
+    ],
+    "PostToolUseFailure": [
+      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}]}
+    ],
     "CwdChanged": [
       {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapters/bootstrap.py\" claude", "timeout": 30}]}
     ],

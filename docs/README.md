@@ -8,7 +8,7 @@ These pages describe the current source and the planned work.
 
 The source directory uses the name `gate-v2.2`.
 The public repository uses the name `agent-gate`.
-The native plugin version is `0.1.0`.
+The native plugin version in this branch is `0.2.3`.
 
 The original use case was the ProjectDiscovery threat: a keyword-triggered model backdoor that transfers `.env` data through download-and-execute code.
 The gate examines the tool action rather than the model's explanation.
@@ -20,6 +20,8 @@ The end-to-end harness uses a scripted model and independent effect checks.
 |---|---|
 | [Architecture](architecture.md) | Tool flow, parser data, content checks, runtime, state, and failure behavior. |
 | [Installation and integrations](integrations.md) | Native plugins, manual hooks, host behavior, human approvals, configuration, and fault checks. |
+| [Context and approvals](context-and-approvals.md) | Actual host events, exact Codex grants, data limits, optional Laya wire format, and task examples. |
+| [Execution guard](execution-guard.md) | Code Mode, actual directory checks, approval scope, OS support, and security limits. |
 | [Policy and Python API](policy-and-api.md) | Rule order, protected paths, model merge, function contracts, and examples. |
 | [Tests and limits](testing-and-limits.md) | Measured results, historical claims, test procedures, and coverage limits. |
 | [Roadmap](roadmap.md) | Optional Laya integration, remaining validation, and future coverage. |
@@ -54,6 +56,13 @@ The agent can alter hooks or approval state through actions outside the gate's a
 | [`adapters/claude_code_hook.py`](../adapters/claude_code_hook.py) | Claude tools, directory state, optional user origin, and native approval decisions. |
 | [`adapters/codex_hook.py`](../adapters/codex_hook.py) | Codex shell calls, patches, transcript recovery, and interactive-channel checks. |
 | [`adapters/common.py`](../adapters/common.py) | Hook errors, deadlines, modes, logs, state, approvals, and `--doctor`. |
+| [`adapters/context.py`](../adapters/context.py) | Bounded prompt and result evidence, provenance, deduplication, and redaction. |
+| [`adapters/reviews.py`](../adapters/reviews.py) | Exact Codex requests, expiry, locks, and single-use grants. |
+| [`adapters/guard_dispatch.py`](../adapters/guard_dispatch.py) | Trusted hooks, authenticated guard facts, and execution tickets. |
+| [`adapters/execution_guard.py`](../adapters/execution_guard.py) | Runtime facts and guarded shell execution inside the host sandbox. |
+| [`adapters/platform_support.py`](../adapters/platform_support.py) | POSIX and Windows state locks and command argument quotes. |
+| [`adapters/approval_mcp.py`](../adapters/approval_mcp.py) | Native client forms and client-session validation. |
+| [`adapters/laya_client.py`](../adapters/laya_client.py) | Optional model advice with a deadline and escalation-only decisions. |
 | [`adapters/gate_approve.py`](../adapters/gate_approve.py) | Human approval, pending-call list, and denial. |
 | [`adapters/install.py`](../adapters/install.py) | Print, merge, or remove manual hooks. Preserve other configuration and backups. |
 | [`adapters/bootstrap.py`](../adapters/bootstrap.py) | Explicit parser setup, runtime verification, and bounded adapter launch. |
@@ -66,9 +75,12 @@ The agent can alter hooks or approval state through actions outside the gate's a
 | [`adapters/test_plugins.py`](../adapters/test_plugins.py) | Plugin, setup, migration, and Hermes failure-path regressions. |
 | [`e2e/`](../e2e/) | Real-CLI runners, scripted model, collector, scenarios, catalog, and pinned CLI dependencies. |
 | [`requirements.txt`](../requirements.txt) | Pinned tree-sitter dependencies. |
+| [`requirements-mcp.txt`](../requirements-mcp.txt) | Pinned MCP dependency for Codex approval setup. |
+| [`adapters/test_context.py`](../adapters/test_context.py) | Context, grants, client-response validation, and model regressions. |
+| [`benchmarks/laya/`](../benchmarks/laya/) | Comparison harness and pilot dataset tools. Generated results are not included. |
 | [`agent-gate-architecture.drawio`](../agent-gate-architecture.drawio) | Editable architecture diagram. Open the file in diagrams.net. |
 | [`agent-gate-architecture.drawio.png`](../agent-gate-architecture.drawio.png) | Inline preview of the current architecture, with an embedded editable copy. |
-| [`agent-gate-future-state.drawio`](../agent-gate-future-state.drawio) | Editable future-state diagram. The design is proposed, not implemented. |
+| [`agent-gate-future-state.drawio`](../agent-gate-future-state.drawio) | Branch components and proposed protected deployment and task grants. |
 | [`agent-gate-future-state.drawio.png`](../agent-gate-future-state.drawio.png) | README preview of the future-state diagram, with an embedded editable copy. |
 
 ## Documentation scope

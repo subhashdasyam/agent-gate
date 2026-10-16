@@ -1,11 +1,16 @@
 # Installation and integrations
 
 Use Python 3.11 or later, with `venv` and `pip` support.
+Make sure that `python3` starts this Python installation on the host PATH.
+The bundled MCP server uses this command on Linux, macOS, and Windows.
+On Windows, enable the `python3` alias if your Python installation does not provide this command.
+
 Use a host version that supports native plugin hooks.
-The local checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21.2`.
+The earlier checks used Claude Code `2.1.290`, Codex `0.162.0`, and Hermes `0.21.2`.
+The new Codex MCP checks used `0.162.1` on Linux.
 Git is necessary for installation from a Git repository.
 
-The native plugin files are available in the GitHub repository.
+The native plugin version in this branch is `0.2.3`.
 The local manager tests used temporary profiles and a local checkout.
 Those tests did not use a fresh GitHub installation.
 Do not install both a native plugin and manual hooks for the same host.
@@ -25,7 +30,7 @@ For GitHub installation, replace the first command with:
 /plugin marketplace add subhashdasyam/agent-gate
 ```
 
-The plugin includes `PreToolUse`, `CwdChanged`, and `UserPromptSubmit` hooks.
+The plugin includes `PreToolUse`, `CwdChanged`, `UserPromptSubmit`, `PostToolUse`, and `PostToolUseFailure` hooks.
 The user-origin option stays off unless `GATE_USER_ORIGIN=1` is set.
 See the [Claude plugin reference](https://code.claude.com/docs/en/plugins-reference).
 The shared catalog includes Codex policy metadata.
@@ -51,8 +56,70 @@ A plugin installation alone does not establish hook trust.
 An update can change the definition hash and invalidate the old trust.
 See the [Codex hook guide](https://learn.chatgpt.com/docs/hooks).
 
+The plugin also bundles a local stdio MCP server for in-session approvals.
+No manual `codex mcp add` command is necessary.
+Prepare the MCP runtime explicitly with `--setup --mcp`, then restart Codex.
+Confirm that `request_review`, `review_details`, and `check_review_support` are available.
+
+The MCP process uses the installed plugin directory, not the project directory.
+State and runtime environment overrides are passed to that process.
+The manifest does not put secrets in configuration.
+
 This repository supplies its own marketplace.
 Hook plugins are not eligible for the public Codex plugin directory under the current [publication rules](https://developers.openai.com/plugins/build/plugins).
+
+#### Codex review forms
+
+The default interactive Codex policy is `on-request`, not `never`.
+Routine actions inside the sandbox do not need a prompt.
+Refer to the [OpenAI default configuration](https://learn.chatgpt.com/docs/config-file/config-sample).
+
+Runtime setup does not prove that Codex can show a review form.
+`--doctor --mcp` reports form support as unverified.
+Codex launch options, profiles, host settings, and administrator restrictions can affect approval prompts.
+The MCP response does not expose the effective approval policy.
+
+After setup and restart, ask Codex:
+
+```text
+Call the Agent Gate check_review_support tool once to check whether I can see a review form.
+```
+
+Select **Confirm form** if the form appears.
+The check runs no command, writes no review state, and creates no grant.
+It confirms the current connection only.
+Do not repeat this check before every tool call.
+
+Codex can automatically decline MCP forms when its policy is `never`.
+A granular policy can also disable forms with `mcp_elicitations=false`.
+An MCP `decline` response does not identify a human decision.
+Agent Gate reports `client-declined`, not a user-selected **Deny**.
+Missing form capability or a missing response channel produces `review-unavailable`.
+Refer to the [OpenAI approval settings](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+If no form appears, stop the current session.
+In your own terminal, start an interactive session:
+
+```bash
+codex -a on-request -c approvals_reviewer=user
+```
+
+This command enables approval prompts and selects the human reviewer for the new session.
+It does not request full access, disable the sandbox, approve an action, or change saved configuration.
+Code Mode stays enabled if your configuration enables it.
+The command does not remove administrator restrictions.
+
+Keep your required sandbox and profile options if you use them.
+Use a Codex client that supports MCP forms.
+Do not remove administrator restrictions to force a prompt.
+Only approve actions that you trust.
+Do not restart to override a human denial.
+
+No configuration change can guarantee that an action is safe.
+The gate keeps review actions stopped without an exact client approval.
+Explicit **Deny**, cancel, timeout, and invalid responses create no grant.
+Closed requests stay closed in the same session.
+The plugin never executes the recovery command or changes your Codex configuration.
 
 ### Hermes
 
@@ -73,11 +140,11 @@ hermes plugins install subhashdasyam/agent-gate --enable
 ```
 
 The plugin supports Hermes `0.21.2` or later.
-It registers `pre_tool_call`.
+It registers `pre_tool_call`, `pre_llm_call`, and `post_tool_call`.
 It does not replace or patch Hermes tools.
 See the [Hermes plugin guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins).
 
-### One explicit parser setup
+### One explicit runtime setup
 
 Run the setup command from the installed gate's error message in your own terminal.
 For a checkout, the equivalent command is:
@@ -85,6 +152,13 @@ For a checkout, the equivalent command is:
 ```bash
 python3 adapters/bootstrap.py --setup
 python3 adapters/bootstrap.py --doctor
+```
+
+For Codex in-session approvals, use these commands instead:
+
+```bash
+python3 adapters/bootstrap.py --setup --mcp
+python3 adapters/bootstrap.py --doctor --mcp
 ```
 
 Use the Python executable shown in the error message.
@@ -96,6 +170,8 @@ No parser packages enter the host's Python environment.
 Only `--setup` downloads packages.
 It creates a virtual environment and installs both pinned parser packages.
 It does a Bash grammar check before it marks the runtime ready.
+The `--mcp` option also installs and verifies `mcp==2.0.0` in that runtime.
+
 A tool hook never installs packages.
 A missing runtime or parser causes denial after the launcher starts.
 Hermes dependency declarations alone do not install the packages.
@@ -115,6 +191,10 @@ Manual hooks remain available for Claude Code and Codex:
 python3 adapters/install.py claude --setup --write
 python3 adapters/install.py codex --setup --write
 ```
+
+The manual Codex installer does not register a bundled MCP server.
+Use the native plugin for in-session approvals.
+For the legacy manual path, explicitly set `GATE_APPROVAL_TRANSPORT=terminal` in the host environment.
 
 The Claude installer writes to `~/.claude/settings.json`.
 The Codex installer writes to `CODEX_HOME/hooks.json`, or `~/.codex/hooks.json` if `CODEX_HOME` is unset.
@@ -158,7 +238,7 @@ An open pager can accept commands through `write_stdin`, which has no hook.
 |---|---|---|
 | Tools | `Bash`, `Monitor`, `PowerShell`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`. | `Bash` for shell calls and `exec_command`, plus native `apply_patch`. Shell-form `apply_patch` also uses the patch checks. |
 | File contents | New text from `Write`, `Edit`, and `MultiEdit`. `NotebookEdit` has path checks only. | Reconstructed patch contents for supported files. |
-| Review | Native `ask`. In `bypassPermissions` or `dontAsk`, deny and get a one-time approval. | Deny and get a one-time approval. This adapter does not use `ask`. |
+| Review | Native `ask`. In `bypassPermissions` or `dontAsk`, deny; legacy operator-terminal approval remains available. | Deny, store the full action, and ask through bundled MCP. This adapter does not use `ask`. |
 | Block or caught gate error | Exit code 2 and a reason. | Exit code 2 and a reason. |
 | Normal mode | Sandbox configuration, command exclusions, and available sandbox tools determine the mode. | Workspace-write or read-only sandbox configuration, with network access off. |
 | Directory checks | Compare `CwdChanged` state against the hook directory. A mismatch makes the shell directory unknown. | Recover `workdir` and `shell` from the transcript through `call_id`. An uncertain recovery makes relative paths unknown in strict mode. |
@@ -184,7 +264,44 @@ These checks cannot prevent failures before Python starts, disabled hooks, or fa
 The earlier validation found that Codex treated `ask` as a hook failure and failed open.
 Thus, the Codex adapter uses exit code 2 for review.
 
-### Claude Code and Codex human approvals
+### Codex in-session approvals
+
+The denial gives a review ID. The agent calls the bundled `request_review` tool with that ID.
+Codex shows Approve, Deny, or More information in the same session.
+Only the client form response can create a grant. Chat text and tool output cannot approve it.
+
+The exact action can run once within 15 minutes after creation, after policy is checked again.
+A missing approval interface means stop. An automatic reviewer cannot issue this grant.
+See [the complete grant workflow and data limits](context-and-approvals.md#who-creates-and-checks-a-codex-grant).
+
+### Codex Code Mode and execution guard
+
+Codex `0.162.1` does not supply complete nested shell arguments to `PreToolUse` in code mode.
+The hook receives the command and a random nested-call ID.
+The transcript records the outer JavaScript call with a different ID.
+The execution guard does not guess these arguments.
+
+The pre-tool hook replaces the shell command with the guard through `updatedInput`.
+The guard first reports the actual directory, executor, and environment fingerprint. It does not execute the original command.
+The post-tool hook authenticates those facts and applies policy and optional Laya advice.
+For `review`, the bundled MCP server shows the same approval form as direct tools.
+The retry uses a new execution ticket and must match all displayed guard facts.
+
+Keep Code Mode enabled. No disable flags are necessary.
+Keep the plugin, trusted hooks, and Codex sandbox active.
+The guard uses Bash on Linux and macOS. Native Windows uses PowerShell.
+CMD and custom shell semantics are not part of this guard contract.
+
+The original outer shell still starts before the guard. Its startup behavior remains a host responsibility.
+
+Direct tools keep exact transcript recovery and complete-argument grants on POSIX hosts.
+Guarded grants bind a controlled execution contract, not hidden transport arguments.
+Refer to [execution scope and OS checks](execution-guard.md).
+
+### Legacy operator-terminal approvals
+
+This section applies to Claude no-prompt fallback and Codex with `GATE_APPROVAL_TRANSPORT=terminal`.
+It is not the default Codex plugin workflow.
 
 Run the approval tool in your terminal, not in the agent session.
 Without an ID, the tool lists calls for approval:
@@ -213,7 +330,7 @@ python3 adapters/bootstrap.py approve --deny APPROVAL_ID
 - The tool stores and compares the full SHA-256 value when the hook consumes the approval.
 - The approval tool must have terminal input and output. It refuses recognized Claude Code or Codex parent processes and environment markers.
 - An unknown Codex directory appears as `UNSEEN-WORKDIR@...`. The approval does not establish the actual directory.
-- POSIX systems use advisory file locks for shared state. The Windows path does not use those locks.
+- POSIX uses `flock`. Native Windows uses an exclusive byte-range lock for shared state.
 
 **CAUTION: Use OS controls to prevent agent writes to approval state.**
 
@@ -231,8 +348,12 @@ An agent with the same account can forge approval state through code that the ga
 | `GATE_SELF_PROTECT` | Set to `0` only during gate development. It disables protection of the gate code directory, not the adapter state directory. |
 | `GATE_MODE` | Force `normal` or `strict` in the Claude and Codex adapters. Use only as a trusted operator override. |
 | `GATE_USER_ORIGIN` | Set to `1` to enable the optional Claude user-origin path. |
+| `GATE_APPROVAL_TRANSPORT` | Set to `terminal` only for legacy Codex approval. Other values use bundled MCP. |
+| `GATE_LAYA_URL` | Complete optional `/v1/systemone` endpoint. Unset means no model calls. |
+| `GATE_LAYA_ROUTES` | Comma-separated decisions sent to Laya. Default: `review`. |
+| `GATE_LAYA_TOKEN` | Optional Bearer token from the environment. |
 
-The adapters keep per-session download state, approval requests, and a JSONL decision log.
+The adapters keep per-session download state, bounded prompt and result evidence, approval requests, and a JSONL decision log.
 The log can contain command text and other sensitive input.
 Keep the state directory private.
 
@@ -280,7 +401,7 @@ It has no complete approval interface. Use the native plugin for new installatio
 | File | Contract |
 |---|---|
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | Claude plugin manifest and `hooks/claude.json` reference. |
-| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with plugin version `0.1.0`. |
+| [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) | Shared Claude/Codex marketplace with branch plugin version `0.2.3`. |
 | [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) | Codex plugin manifest and `hooks/codex.json` reference. |
 | [`hooks/claude.json`](../hooks/claude.json) | `PreToolUse`, `CwdChanged`, and optional user-origin prompt capture. |
 | [`hooks/codex.json`](../hooks/codex.json) | `PreToolUse` for `Bash` and `apply_patch`. |
@@ -326,7 +447,7 @@ The plugin does not impose the Claude/Codex single-use or 15-minute limit on nat
 | `--remove` | Remove recognized manual gate hooks only. |
 | `--setup` | Prepare the shared parser runtime explicitly. |
 | `--project DIR` | Select project-local configuration for Claude or Codex. |
-| `--user-origin` | Include Claude prompt capture for optional user-origin checks. |
+| `--user-origin` | Compatibility option. Prompt capture is now always included. User-origin policy still needs `GATE_USER_ORIGIN=1`. |
 
 The installer rejects combined `--write` and `--remove`.
 It rejects invalid JSON in the current file without a write.
@@ -348,6 +469,9 @@ The Hermes path does not support manual `--write`, `--remove`, or `--project`.
 | Missing runtime or parser | Run the exact setup command from the denial in your own terminal. |
 | Setup succeeds, but Hermes still denies | Use the Hermes Python executable from the denial. Its version can differ from shell Python. |
 | Codex plugin exists, but no gate decisions appear | Examine plugin enablement and trust the current definition through `/hooks`. |
+| Codex review tool is unavailable | Run `--setup --mcp` with the launcher Python, then restart. Use the native plugin, not manual hooks alone. |
+| Codex review is denied, used, or expired | Stop. Do not repeat the prompt or alter the action to avoid the decision. |
+| Optional Laya has no effect | Examine endpoint, route, context truncation, and fallback audit records. The client cannot lower policy decisions. |
 | Duplicate decisions or approvals | Remove recognized old manual hooks. Examine other configuration layers. |
 | Relative paths cause unexpected review | Examine host directory metadata and Codex transcript recovery. Do not force an unverified directory. |
 | YAML content checks miss a form | Refer to the limited YAML parser coverage. Add a focused regression before a coverage change. |

@@ -16,6 +16,7 @@ Codex: after installing, review and trust the hook once with /hooks
 (hook trust is tied to a hash of the definition).
 """
 import json
+import base64
 import argparse
 import os
 from pathlib import Path
@@ -27,6 +28,7 @@ import tempfile
 import time
 
 import bootstrap
+import platform_support as P
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable or "python3"
@@ -34,14 +36,21 @@ PY = sys.executable or "python3"
 
 def _cmd(script):
     host = "claude" if script == "claude_code_hook.py" else "codex"
-    return shlex.join([PY, os.path.join(HERE, "bootstrap.py"), host])
+    if os.name == "nt":
+        path = base64.b64encode(os.path.join(HERE, "bootstrap.py").encode()).decode()
+        return ('python3 -I -c "import base64,runpy,sys; p=base64.b64decode(\'' + path +
+                '\').decode(); sys.argv=[p,\'' + host + '\']; runpy.run_path(p,run_name=\'__main__\')"')
+    return P.command([PY, os.path.join(HERE, "bootstrap.py"), host])
 
 
 def _owned(command):
     if not isinstance(command, str):
         return False
+    if command in (_cmd("claude_code_hook.py"), _cmd("codex_hook.py")):
+        return True
     try:
-        tokens = shlex.split(command)
+        # Windows PowerShell renderings use a call operator and single-quoted arguments.
+        tokens = shlex.split(command[2:] if command.startswith("& ") else command)
     except ValueError:
         return False
     if len(tokens) < 2 or not os.path.basename(tokens[0]).startswith(("python", "pypy")):
@@ -79,17 +88,20 @@ def claude_config(user_origin=False):
         "PreToolUse": [{"matcher": "Bash|Monitor|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
                         "hooks": [hook]}],
         "CwdChanged": [{"hooks": [dict(hook)]}],
+        "UserPromptSubmit": [{"hooks": [dict(hook)]}],
+        "PostToolUse": [{"hooks": [dict(hook)]}],
+        "PostToolUseFailure": [{"hooks": [dict(hook)]}],
     }}
-    if user_origin:
-        cfg["hooks"]["UserPromptSubmit"] = [{"hooks": [dict(hook)]}]
     return cfg
 
 
 def codex_config():
-    return {"hooks": {"PreToolUse": [{
+    hook = {"type": "command", "command": _cmd("codex_hook.py"), "timeout": 30,
+            "statusMessage": "agent-gate"}
+    return {"hooks": {"UserPromptSubmit": [{"hooks": [dict(hook)]}],
+        "PostToolUse": [{"hooks": [dict(hook)]}], "PreToolUse": [{
         "matcher": "^(Bash|apply_patch)$",
-        "hooks": [{"type": "command", "command": _cmd("codex_hook.py"), "timeout": 30,
-                   "statusMessage": "agent-gate"}]}]}}
+        "hooks": [hook]}]}}
 
 
 def merge(path, new, remove=False):
