@@ -78,10 +78,10 @@ The agent can alter hooks or approval state through actions outside the gate's a
 | [`requirements-mcp.txt`](../requirements-mcp.txt) | Pinned MCP dependency for Codex approval setup. |
 | [`adapters/test_context.py`](../adapters/test_context.py) | Context, grants, client-response validation, and model regressions. |
 | [`benchmarks/laya/`](../benchmarks/laya/) | Comparison harness and pilot dataset tools. Generated results are not included. |
-| [`agent-gate-architecture.drawio`](../agent-gate-architecture.drawio) | Editable architecture diagram. Open the file in diagrams.net. |
-| [`agent-gate-architecture.drawio.png`](../agent-gate-architecture.drawio.png) | Inline preview of the current architecture, with an embedded editable copy. |
-| [`agent-gate-future-state.drawio`](../agent-gate-future-state.drawio) | Branch components and proposed protected deployment and task grants. |
-| [`agent-gate-future-state.drawio.png`](../agent-gate-future-state.drawio.png) | README preview of the future-state diagram, with an embedded editable copy. |
+| [`agent-gate-architecture.drawio`](diagrams/agent-gate-architecture.drawio) | Editable architecture diagram. Open the file in diagrams.net. |
+| [`agent-gate-architecture.drawio.png`](diagrams/agent-gate-architecture.drawio.png) | Inline preview of the current architecture, with an embedded editable copy. |
+| [`agent-gate-future-state.drawio`](diagrams/agent-gate-future-state.drawio) | Branch components and proposed protected deployment and task grants. |
+| [`agent-gate-future-state.drawio.png`](diagrams/agent-gate-future-state.drawio.png) | README preview of the future-state diagram, with an embedded editable copy. |
 
 ## Documentation scope
 

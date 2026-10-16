@@ -4,9 +4,9 @@
 
 ## Current architecture
 
-![Current architecture: native plugins, parser runtime, deterministic policy, decisions, and human approvals.](../agent-gate-architecture.drawio.png)
+![Current architecture: native plugins, parser runtime, deterministic policy, decisions, and human approvals.](diagrams/agent-gate-architecture.drawio.png)
 
-[Editable draw.io file](../agent-gate-architecture.drawio) · [Full-size image](../agent-gate-architecture.drawio.png)
+[Editable draw.io file](diagrams/agent-gate-architecture.drawio) · [Full-size image](diagrams/agent-gate-architecture.drawio.png)
 
 ## Complete tool flow
 

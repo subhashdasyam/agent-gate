@@ -35,9 +35,9 @@ The adapters apply the decision before tool execution.
 Prompt and result hooks keep context for the next action.
 Laya stays off unless the operator configures an endpoint.
 
-![Current architecture: Claude Code, Codex, Hermes, parser runtime, policy, decisions, and human approvals.](agent-gate-architecture.drawio.png)
+![Current architecture: Claude Code, Codex, Hermes, parser runtime, policy, decisions, and human approvals.](docs/diagrams/agent-gate-architecture.drawio.png)
 
-[Editable draw.io file](agent-gate-architecture.drawio) · [Vector preview](agent-gate-architecture.drawio.svg)
+[Editable draw.io file](docs/diagrams/agent-gate-architecture.drawio) · [Vector preview](docs/diagrams/agent-gate-architecture.drawio.svg)
 
 ## Quick start
 
@@ -110,9 +110,9 @@ Refer to [installation and approvals](docs/integrations.md) for local developmen
 The optional Laya client is available in this branch, with a 2-second deadline.
 Production validation, protected deployment, and bounded task grants remain future work.
 
-![Future proposal: optional Laya, deterministic policy floor, human approval, and OS isolation.](agent-gate-future-state.drawio.png)
+![Future proposal: optional Laya, deterministic policy floor, human approval, and OS isolation.](docs/diagrams/agent-gate-future-state.drawio.png)
 
-[Editable draw.io file](agent-gate-future-state.drawio) · [Vector preview](agent-gate-future-state.drawio.svg)
+[Editable draw.io file](docs/diagrams/agent-gate-future-state.drawio) · [Vector preview](docs/diagrams/agent-gate-future-state.drawio.svg)
 
 Solid outlines show available components. Dashed outlines show future work.
 Claude and Hermes interactive validation and remote-backend checks remain future work.

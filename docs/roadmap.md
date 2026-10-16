@@ -12,9 +12,9 @@ Dashed arrows show the optional Laya path, which is now available but off by def
 The adapter row shows the available native Hermes plugin.
 Claude and Hermes interactive approval tests and remote-backend validation remain future work.
 
-![Future-state diagram: optional Laya, policy floor, human approval, and OS isolation.](../agent-gate-future-state.drawio.png)
+![Future-state diagram: optional Laya, policy floor, human approval, and OS isolation.](diagrams/agent-gate-future-state.drawio.png)
 
-[Edit the draw.io file](../agent-gate-future-state.drawio) · [Open the full-size preview](../agent-gate-future-state.drawio.png)
+[Edit the draw.io file](diagrams/agent-gate-future-state.drawio) · [Open the full-size preview](diagrams/agent-gate-future-state.drawio.png)
 
 The installed Laya path cannot lower any deterministic decision.
 A missing, invalid, or late model reply keeps the deterministic floor.
