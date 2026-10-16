@@ -24,7 +24,10 @@ It does not parse JavaScript, guess PATH from shell configuration, or trust anot
 
 The guard sets `PWD` to the actual canonical directory.
 It removes `OLDPWD`, `SHLVL`, and `_` from the child environment.
+It also removes `CODEX_TOOL_CALL_ID`, which changes for each Codex tool call.
+The child does not receive this metadata, so a new tool-call ID does not invalidate an unchanged retry.
 The fingerprint includes every effective child environment value.
+Changes to `PATH`, `PYTHONPATH`, and other retained variables still invalidate the execution ticket.
 The effective environment excludes `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `SHELLOPTS`, `BASHOPTS`, and exported Bash functions.
 
 This contract does not bind hidden Codex transport fields such as login mode, TTY mode, or timeout.

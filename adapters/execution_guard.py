@@ -23,8 +23,10 @@ def encode(value):
 
 def child_environment():
     # Do not load new shell startup code after policy inspection.
+    # Per-call host metadata must reach neither the fingerprint nor the child.
     env = {k: v for k, v in os.environ.items() if k not in (
-        "BASH_ENV", "ENV", "PROMPT_COMMAND", "SHELLOPTS", "BASHOPTS", "OLDPWD", "SHLVL", "_")
+        "BASH_ENV", "ENV", "PROMPT_COMMAND", "SHELLOPTS", "BASHOPTS", "OLDPWD", "SHLVL", "_",
+        "CODEX_TOOL_CALL_ID")
         and not k.startswith("BASH_FUNC_")}
     env["PWD"] = os.path.realpath(os.getcwd())
     return env

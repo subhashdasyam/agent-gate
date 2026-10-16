@@ -167,6 +167,48 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse((self.project / "proof").exists())
 
+    def test_call_id_changes_do_not_restart_read_only_probe(self):
+        command = "Get-Location" if os.name == "nt" else "pwd"
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "probe-call"}):
+            self.probe(command)
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "retry-call"}):
+            p, ticket = self.prepare(command)
+        result = self.runtime(ticket, CODEX_TOOL_CALL_ID="runtime-call")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.collect(p, result))
+        self.assertFalse((Path(self.state_dir) / "reviews.json").exists())
+
+    def test_approved_retry_survives_new_call_id_and_remains_single_use(self):
+        command = self.command if os.name == "nt" else (
+            "python3 -c 'import os; open(\"proof\",\"w\").write(str(os.getenv(\"CODEX_TOOL_CALL_ID\")))'")
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "probe-call"}):
+            self.probe(command)
+        with self.assertRaises(Refused):
+            self.prepare(command)
+        rid, _ = self.approve()
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "approved-retry-call"}):
+            p, ticket = self.prepare(command)
+        result = self.runtime(ticket, CODEX_TOOL_CALL_ID="runtime-call")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.collect(p, result))
+        expected = "marker" if os.name == "nt" else "None"
+        self.assertEqual((self.project / "proof").read_text().strip(), expected)
+        self.assertEqual(R.details(rid, "s1")["status"], "used")
+        with self.assertRaises(Refused):
+            self.prepare(command)
+        self.assertEqual(len(json.loads((Path(self.state_dir) / "reviews.json").read_text())), 1)
+
+    def test_call_id_is_removed_but_meaningful_environment_remains_bound(self):
+        _, ticket = self.prepare()
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "first"}):
+            first = E.facts(ticket)
+            self.assertFalse("CODEX_TOOL_CALL_ID" in E.child_environment())
+        with patch.dict(os.environ, {"CODEX_TOOL_CALL_ID": "second"}):
+            self.assertEqual(first, E.facts(ticket))
+        for key in ("PATH", "PYTHONPATH", "AGENT_GATE_TEST_VALUE"):
+            with self.subTest(key=key), patch.dict(os.environ, {key: "synthetic-environment-change"}):
+                self.assertNotEqual(first["environment_sha256"], E.facts(ticket)["environment_sha256"])
+
     def test_volatile_environment_is_controlled_not_just_ignored(self):
         with patch.dict(os.environ, {"BASH_ENV": "untrusted.sh", "OLDPWD": "/different",
                                    "SHLVL": "99", "_": "different", "PWD": "/wrong", "BASH_FUNC_fake%%": "bad"}):
